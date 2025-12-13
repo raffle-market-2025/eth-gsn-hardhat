@@ -17,8 +17,14 @@
   "homepage": "https://github.com/raffle-market-2025/eth-gsn-hardhat#readme",
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^4.0.3",
+    "@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.2",
     "@nomicfoundation/hardhat-ignition": "^3.0.6",
+    "@nomicfoundation/hardhat-ignition-ethers": "^3.0.6",
+    "@nomicfoundation/hardhat-keystore": "^3.0.3",
+    "@nomicfoundation/hardhat-mocha": "^3.0.8",
+    "@nomicfoundation/hardhat-network-helpers": "^3.0.3",
     "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.2",
+    "@nomicfoundation/hardhat-typechain": "^3.0.1",
     "@nomicfoundation/hardhat-verify": "^3.0.8",
     "@opengsn/cli": "^3.0.0-beta.6",
     "@types/chai": "^4.3.20",
@@ -30,6 +36,7 @@
     "forge-std": "github:foundry-rs/forge-std#v1.9.4",
     "hardhat": "^3.1.0",
     "hardhat-deploy": "^1.0.4",
+    "hardhat-ethernal": "^3.4.0",
     "mocha": "^11.7.5",
     "ts-node": "^10.9.2",
     "typescript": "~5.8.0"

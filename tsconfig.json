@@ -16,6 +16,7 @@
     "deploy",
     "scripts",
     "test",
+    "types",
     "utils",
     "helper-hardhat-config.ts"
   ]
