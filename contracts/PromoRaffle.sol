@@ -5,7 +5,7 @@
 */
 
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.28;
 
 import "@opengsn/contracts/src/ERC2771Recipient.sol";
 import "./PromoNFT.sol";
