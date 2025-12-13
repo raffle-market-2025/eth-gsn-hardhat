@@ -36,18 +36,16 @@ contract PromoRaffle is ERC2771Recipient {
     uint256 private s_cycles;
     address public owner;
 
-    address promoNft;
-    address promoNftSender;
+    address promoNft = address(0);
+    address promoNftSender = address(0);
 
-    event RaffleEnter(address indexed player);
-    event RequestedRaffleWinner(uint256 indexed requestId);
-    event WinnerPicked(address indexed winner);
+    event RaffleEnter( address indexed player);
+    event WinnerPicked( uint256 cycle, address payable[] players, address indexed winner);
 
     constructor(
         uint _playersNeeded,
         address _forwarder,
-        address _promoNft,
-        address _promoNftSender
+        address _deployer
     ) {
         owner = _msgSender();
         s_raffleState = RaffleState.OPEN;
@@ -56,9 +54,7 @@ contract PromoRaffle is ERC2771Recipient {
         s_cycles++;
 
         _setTrustedForwarder(_forwarder);
-
-        if (_promoNft != address(0)) { setPromoNftAddress(_promoNft); }
-        setPromoNftSender(_promoNftSender);
+        setPromoNftSender(_deployer);
     }
 
     function enterRaffle() public  {       
@@ -69,27 +65,25 @@ contract PromoRaffle is ERC2771Recipient {
 
         (bool transferred, uint mintedTokenId) = PromoRaffleNFTs(promoNft).mintNFTs(_msgSender());        
         require(transferred, "Can't transfer");
-        
 
         //s_players.push(payable(_msgSender()));
         tokensInRaffle.push(mintedTokenId);
         // Whenever we update a dynamic object like array or mapping, we should emit events
         emit RaffleEnter(_msgSender());
 
-        if (tokensInRaffle.length >= playersNeeded) { runRaffle(); }
+        if (tokensInRaffle.length >= playersNeeded) {
+            _runRaffle();
+        }
     }
 
-    function promoRafflesToSubscribers(address receiver) public {
-        require(_msgSender() == promoNftSender, "No access");
-        (bool transferred, uint mintedTokenId) = PromoRaffleNFTs(promoNft).mintNFTs(receiver);        
-        require(transferred, "Can't transfer");
-
-        tokensInRaffle.push(mintedTokenId);
-        emit RaffleEnter(receiver);
-
-        
-    }
-
+    // function promoRafflesToSubscribers(address receiver) public {
+    //    require(_msgSender() == promoNftSender, "No access");
+    //    (bool transferred, uint mintedTokenId) = PromoRaffleNFTs(promoNft).mintNFTs(receiver);        
+    //    require(transferred, "Can't transfer");
+    //
+    //    tokensInRaffle.push(mintedTokenId);
+    //    emit RaffleEnter(receiver);
+    //}
 
     function checkSet() public view returns (bool upkeepNeeded)
     {
@@ -101,23 +95,30 @@ contract PromoRaffle is ERC2771Recipient {
 
     // External func are cheaper this func is automatically called by chainlink no
     function runRaffle() external onlyOwner {
+        _runRaffle();
+    }
+
+    function _runRaffle() internal {
         bool upkeepNeeded = checkSet();
         if (!upkeepNeeded) {
             revert Raffle__upkeepNotNeeded( address(this).balance, tokensInRaffle.length, uint256(s_raffleState));
         }
+
         s_raffleState = RaffleState.CALCULATING;
 
         for(uint i = 0; i < tokensInRaffle.length; i++) {            
-            s_players.push(payable(PromoRaffleNFTs(promoNft).ownerOf(tokensInRaffle[i])));
+            s_players.push( payable(PromoRaffleNFTs(promoNft).ownerOf(tokensInRaffle[i])));
         }
 
         // Generate pseudo-random number using blockhash and timestamp, scope [0, s_players.length]
         uint256 indexOfWinner = uint256(
-                keccak256(abi.encodePacked(block.prevrandao, block.timestamp, blockhash(block.number - 1)))
+                keccak256( abi.encodePacked(block.prevrandao, block.timestamp, blockhash(block.number - 1)))
             ) % s_players.length;
 
         address payable recentWinner = s_players[indexOfWinner];
         s_recentWinner = recentWinner;
+        emit WinnerPicked(s_cycles, s_players, recentWinner);
+
         s_cycles++;
         s_lastTimestamp = block.timestamp;
 
@@ -126,8 +127,6 @@ contract PromoRaffle is ERC2771Recipient {
         if (!success) { revert Raffle__TransferFailed(); }
 
         s_raffleState = RaffleState.OPEN;
-
-        emit WinnerPicked(recentWinner);
 
         for (uint i = 0; i < s_players.length; i++) {
            PromoRaffleNFTs(promoNft).burn(s_players[i]);  
@@ -150,10 +149,6 @@ contract PromoRaffle is ERC2771Recipient {
         return s_raffleState;
     }
 
-    function getNumWords() public pure returns (uint256) {
-        return NUM_WORDS;
-    }
-
     function getNumberOfPlayers() public view returns (uint256) {
         return tokensInRaffle.length;
     }
@@ -166,20 +161,26 @@ contract PromoRaffle is ERC2771Recipient {
         playersNeeded = _playersNeeded;
     }
 
+    // only-once promoNft setter
     function setPromoNftAddress(address _promoNft) public onlyOwner {
-        promoNft = _promoNft;
+        if (_promoNft != address(0) && promoNft == address(0)) {
+            promoNft = _promoNft;
+        }   
     }
 
     function getPromoNftAddress() public view returns (address) {
-        return  promoNft;
+        return promoNft;
     }
 
+    // only-once promoNftSender setter
     function setPromoNftSender(address _promoNftSender) public onlyOwner {
-        promoNftSender = _promoNftSender;
+        if (_promoNftSender != address(0) && promoNftSender == address(0)) {
+            promoNftSender = _promoNftSender;
+        }
     }
 
     function getPromoNftSender() public view returns (address) {
-        return  promoNftSender;
+        return promoNftSender;
     }
 
     receive() external payable{

@@ -79,12 +79,12 @@ contract PromoRaffleNFTs is ERC721Enumerable, Ownable, Pausable {
         require(success, "Transfer failed.");
     }
 
-    function isApprovedForAll(
-        address _owner,
-        address _operator
-    ) public override view returns (bool isOperator) {
-        return ERC721.isApprovedForAll(_owner, _operator);
-    }
+    // function isApprovedForAll(
+    //    address _owner,
+    //    address _operator
+    // ) public override view returns (bool isOperator) {
+    //    return ERC721.isApprovedForAll(_owner, _operator);
+    // }
 
     function burn(address owner) public {
         require(msg.sender == promoRaffleAddress, "Not a raffle contract call");
@@ -123,34 +123,34 @@ contract PromoRaffleNFTs is ERC721Enumerable, Ownable, Pausable {
         return bytes(baseURI).length > 0 ? string(abi.encodePacked(baseURI)) : "";
     }
 
-    function transferFrom(
-        address from,
-        address to,
-        uint256 tokenId
-    ) public virtual override {
-        require(to == promoRaffleAddress, "ERC721: transfer forbidden");
-        require(_isApprovedOrOwner(_msgSender(), tokenId), "ERC721: caller is not token owner or approved");
+    // function transferFrom(
+    //    address from,
+    //    address to,
+    //    uint256 tokenId
+    // ) public virtual override {
+    //    require(to == promoRaffleAddress, "ERC721: transfer forbidden");
+    //    require(_isApprovedOrOwner(_msgSender(), tokenId), "ERC721: caller is not token owner or approved");
+    //
+    //    _transfer(from, to, tokenId);
+    // }
 
-        _transfer(from, to, tokenId);
-    }
+    // function safeTransferFrom(
+    //    address from,
+    //    address to,
+    //    uint256 tokenId
+    // ) public virtual override {
+    //    require(to == promoRaffleAddress, "ERC721: transfer forbidden");
+    //    safeTransferFrom(from, to, tokenId, "");
+    // }
 
-    function safeTransferFrom(
-        address from,
-        address to,
-        uint256 tokenId
-    ) public virtual override {
-        require(to == promoRaffleAddress, "ERC721: transfer forbidden");
-        safeTransferFrom(from, to, tokenId, "");
-    }
-
-    function safeTransferFrom(
-        address from,
-        address to,
-        uint256 tokenId,
-        bytes memory data
-    ) public virtual override {
-        require(to == promoRaffleAddress, "ERC721: transfer forbidden");
-        require(_isApprovedOrOwner(_msgSender(), tokenId), "ERC721: caller is not token owner or approved");
-        _safeTransfer(from, to, tokenId, data);
-    }
+    // function safeTransferFrom(
+    //    address from,
+    //    address to,
+    //    uint256 tokenId,
+    //    bytes memory data
+    // ) public virtual override {
+    //    require(to == promoRaffleAddress, "ERC721: transfer forbidden");
+    //    require(_isApprovedOrOwner(_msgSender(), tokenId), "ERC721: caller is not token owner or approved");
+    //    _safeTransfer(from, to, tokenId, data);
+    // }
 }
