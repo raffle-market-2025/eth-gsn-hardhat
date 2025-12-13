@@ -40,7 +40,8 @@
   },
   "scripts": {
     "node-start:local": "npx hardhat node",
-    "deploy:hardhat:promo": "npx hardhat compile && npx hardhat clean && npx hardhat run ./deploy/01-deploy-promoRaffle.ts --network hardhat",
+    "compile:hardhat": "npx hardhat compile && npx hardhat clean",
+    "deploy:hardhat:promo": "npx hardhat run ./deploy/01-deploy-promoRaffle.ts --network hardhat",
     "test": "npx hardhat test ./test/staging/Lottery.staging.test.js --network hardhat"
   }
 }
