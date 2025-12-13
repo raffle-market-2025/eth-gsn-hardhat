@@ -1,8 +1,10 @@
-// utils/verify.ts
 import hre from "hardhat";
 import { verifyContract } from "@nomicfoundation/hardhat-verify/verify";
 
-const verify = async (contractAddress: string, args: unknown[] = []): Promise<void> => {
+const verify = async (
+  contractAddress: string,
+  args: unknown[] = []
+): Promise<void> => {
   console.log("Verifying contract:", contractAddress);
 
   try {
@@ -10,9 +12,8 @@ const verify = async (contractAddress: string, args: unknown[] = []): Promise<vo
       {
         address: contractAddress,
         constructorArgs: args,
-        // provider: "etherscan", // можно явно указать, если нужно
       },
-      hre,
+      hre
     );
 
     console.log("Verification successful");

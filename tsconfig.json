@@ -1,4 +1,3 @@
-/* Based on https://github.com/tsconfig/bases/blob/501da2bcd640cf95c95805783e1012b992338f28/bases/node22.json */
 {
   "compilerOptions": {
     "lib": ["es2023"],
@@ -8,8 +7,16 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "moduleResolution": "Node16",
+    "resolveJsonModule": true,
     "outDir": "dist",
     "types": ["node", "hardhat", "hardhat-deploy"]
   },
-  "include": ["hardhat.config.ts", "deploy", "scripts", "test"]
+  "include": [
+    "hardhat.config.ts",
+    "deploy",
+    "scripts",
+    "test",
+    "utils",
+    "helper-hardhat-config.ts"
+  ]
 }
