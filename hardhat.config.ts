@@ -19,7 +19,21 @@ export default defineConfig({
       },
     },
   },
+  // ethernal: {
+  //   // optional, you can log in via ENV or interactive
+  //   // email: process.env.ETHERNAL_EMAIL,
+  //   // password: process.env.ETHERNAL_PASSWORD,
+  //   uploadAst: true,
+  //   disableSync: false,
+  //   disabled: false,
+  // },
   networks: {
+    hardhat: {
+      // this is an in-memory local node, no url needed
+      type: "edr-simulated",
+      chainType: "l1",
+      chainId: 31337, // optional, but common
+    },
     hardhatMainnet: {
       type: "edr-simulated",
       chainType: "l1",

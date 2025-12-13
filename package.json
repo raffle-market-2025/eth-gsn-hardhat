@@ -40,8 +40,10 @@
   },
   "scripts": {
     "node-start:local": "npx hardhat node",
+    "gsn-start:local": "npx gsn start -n http://127.0.0.1:8545 --workdir build/gsn",
     "compile:hardhat": "npx hardhat compile && npx hardhat clean",
-    "deploy:hardhat:promo": "npx hardhat run ./deploy/01-deploy-promoRaffle.ts --network hardhat",
+    "deploy:hardhat:promo": "npx hardhat run ./deploy/01-promoRaffle.ts --network hardhat",
+    "hardhat-ethernal": "npm install --save-dev hardhat-ethernal",
     "test": "npx hardhat test ./test/staging/Lottery.staging.test.js --network hardhat"
   }
 }
