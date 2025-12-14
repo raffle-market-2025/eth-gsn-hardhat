@@ -41,7 +41,7 @@ contract PromoRaffle is ERC2771Recipient {
 
 
     event FundsReceived(address indexed from, uint256 amount);
-    event RaffleEnter( address indexed player, bytes3 country3, uint256 blockTimestamp);
+    event RaffleEnter( address indexed player, bytes3 country3, uint256 _lastTimestamp);
     event WinnerPicked( uint256 cycle, address payable[] players, address indexed winner);
 
     constructor(
