@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 
-contract PromoRaffleNFTs is ERC721Enumerable, Ownable, Pausable {
+contract PromoNFT is ERC721Enumerable, Ownable, Pausable {
     using SafeMath for uint256;
     using Strings for uint256;
     using Counters for Counters.Counter;
