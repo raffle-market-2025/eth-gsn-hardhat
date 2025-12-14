@@ -4,7 +4,7 @@ import forwarderJson from "../build/gsn/Forwarder.json";
 async function main() {
   const { ethers } = await network.connect();
   const forwarderAddress = (forwarderJson as any).address;
-  const promoFundAmount = ethers.parseEther("500"); // 500 ETH
+  const promoFundAmount = ethers.parseEther("0.005"); // 0.00500 ETH
 
   console.log("Start deploy...");
 
@@ -66,7 +66,14 @@ async function main() {
   // test run EnterRaffle and setting max players
   //
   console.log("----- PromoRaffle test run started ---------------------------------------");
-  const enterTx = await promoRaffleContract.enterRaffle();
+
+  const asBytes3 = (s: string) => {
+    const b = ethers.toUtf8Bytes(s);
+    if (b.length > 3) throw new Error("country must be exactly 2 or 3 ASCII chars");
+    return ethers.hexlify(b); // "UKR" -> "0x554b52"
+  };
+
+  const enterTx = await (promoRaffleContract as any).enterRaffle(asBytes3("UKR"));
   console.log("Entering PromoRaffle, tx hash:", enterTx.hash);
   await enterTx.wait();
   const playersEntered: bigint = await promoRaffleContract.getNumberOfPlayersEntered();
@@ -86,7 +93,6 @@ async function main() {
   await txFund.wait();
 
   console.log(`PromoRaffle (${promoRaffle.getAddress()}) funded with ${promoFundAmount.toString()} wei`);
-
   console.log("----- PromoRaffle configuration complete ------------------------");
 }
 

@@ -51,8 +51,8 @@ export default defineConfig({
     sepolia: {
       type: "http",
       chainType: "l1",
-      url: configVariable("SEPOLIA_RPC_URL"),
-      accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
+      url: "https://sepolia.infura.io/v3/c53f023f8f7848b48a452cfaaa1d3718",            // configVariable("SEPOLIA_RPC_URL"),
+      accounts: ["dd8a8c85dcf602d113fb6d9aa0aff7a95bd8c89335f912d05783650e818b1639"],   // [configVariable("SEPOLIA_PRIVATE_KEY")],
     },
   },
 } as any);

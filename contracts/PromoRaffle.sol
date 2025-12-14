@@ -39,8 +39,9 @@ contract PromoRaffle is ERC2771Recipient {
     address promoNft = address(0);
     address promoNftSender = address(0);
 
+
     event FundsReceived(address indexed from, uint256 amount);
-    event RaffleEnter( address indexed player);
+    event RaffleEnter( address indexed player, bytes3 country3, uint256 blockTimestamp);
     event WinnerPicked( uint256 cycle, address payable[] players, address indexed winner);
 
     constructor(
@@ -52,7 +53,7 @@ contract PromoRaffle is ERC2771Recipient {
         s_raffleState = RaffleState.OPEN;
         s_lastTimestamp = block.timestamp;
         playersNeeded = _playersNeeded;
-        s_cycles++;
+        s_cycles ++;
 
         _setTrustedForwarder(_forwarder);
         setPromoNftSender(_deployer);
@@ -66,7 +67,7 @@ contract PromoRaffle is ERC2771Recipient {
         return address(this).balance;
     }
 
-    function enterRaffle() public  {       
+    function enterRaffle( bytes3 _country3) public  {       
         if (s_raffleState != RaffleState.OPEN) { revert Raffle__NotOpen(); }
 
         uint tokenCount = PromoNFT(promoNft).balanceOf(_msgSender());
@@ -77,22 +78,14 @@ contract PromoRaffle is ERC2771Recipient {
 
         //s_players.push(payable(_msgSender()));
         tokensInRaffle.push(mintedTokenId);
+
         // Whenever we update a dynamic object like array or mapping, we should emit events
-        emit RaffleEnter(_msgSender());
+        emit RaffleEnter( _msgSender(), _country3, s_lastTimestamp);
 
         if (tokensInRaffle.length >= playersNeeded) {
             _runRaffle();
         }
     }
-
-    // function promoRafflesToSubscribers(address receiver) public {
-    //    require(_msgSender() == promoNftSender, "No access");
-    //    (bool transferred, uint mintedTokenId) = PromoNFT(promoNft).mintNFTs(receiver);        
-    //    require(transferred, "Can't transfer");
-    //
-    //    tokensInRaffle.push(mintedTokenId);
-    //    emit RaffleEnter(receiver);
-    //}
 
     function checkSet() public view returns (bool upkeepNeeded)
     {
@@ -126,9 +119,9 @@ contract PromoRaffle is ERC2771Recipient {
 
         address payable recentWinner = s_players[indexOfWinner];
         s_recentWinner = recentWinner;
-        emit WinnerPicked(s_cycles, s_players, recentWinner);
+        emit WinnerPicked( s_cycles, s_players, recentWinner);
 
-        s_cycles++;
+        s_cycles ++;
         s_lastTimestamp = block.timestamp;
 
         // transfer raffle balance onto recentWinner
