@@ -1,8 +1,0 @@
-{
-  "sepolia": {
-    "PromoRaffle": {
-      "address": "0xe16eA73171A9B378C72ba820bd1F12c75D5E038b",
-      "startBlock": 9840835
-    }
-  }
-}
