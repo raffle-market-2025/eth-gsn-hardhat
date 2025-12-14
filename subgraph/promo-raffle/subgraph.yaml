@@ -10,7 +10,7 @@ dataSources:
     source:
       address: "0x64e7Ca7A027Fbc556Cf87E6b211A66d562663c8f"
       abi: PromoRaffle
-      startBlock: 0
+      startBlock: 9841240
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
