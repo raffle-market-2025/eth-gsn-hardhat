@@ -8,25 +8,28 @@ dataSources:
     name: PromoRaffle
     network: sepolia
     source:
-      address: "0x64e7Ca7A027Fbc556Cf87E6b211A66d562663c8f"
+      address: "0x4e5F2fbf0B9A73dDF2a30dd9D64Bb8a5eD7f7FB2"
       abi: PromoRaffle
-      startBlock: 9841240
+      startBlock: 9858122
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
-        - FundsReceived
         - RaffleEnter
+        - RaffleFundsReceived
+        - RafflePrizePaid
         - WinnerPicked
       abis:
         - name: PromoRaffle
           file: ./abis/PromoRaffle.json
       eventHandlers:
-        - event: FundsReceived(indexed address,uint256)
-          handler: handleFundsReceived
-        - event: RaffleEnter(indexed address,bytes3,uint256)
+        - event: RaffleEnter(indexed address,string,bytes3,uint256)
           handler: handleRaffleEnter
+        - event: RaffleFundsReceived(indexed address,uint256)
+          handler: handleRaffleFundsReceived
+        - event: RafflePrizePaid(indexed address,uint256)
+          handler: handleRafflePrizePaid
         - event: WinnerPicked(uint256,address[],indexed address)
           handler: handleWinnerPicked
       file: ./src/promo-raffle.ts

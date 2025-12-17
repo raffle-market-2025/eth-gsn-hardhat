@@ -1,4 +1,15 @@
-type FundsReceived @entity(immutable: true) {
+type RaffleEnter @entity(immutable: true) {
+  id: Bytes!
+  _player: Bytes! # address
+  _ip: String! # string
+  _country3: Bytes! # bytes3
+  _lastTimestamp: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type RaffleFundsReceived @entity(immutable: true) {
   id: Bytes!
   from: Bytes! # address
   amount: BigInt! # uint256
@@ -7,11 +18,10 @@ type FundsReceived @entity(immutable: true) {
   transactionHash: Bytes!
 }
 
-type RaffleEnter @entity(immutable: true) {
+type RafflePrizePaid @entity(immutable: true) {
   id: Bytes!
-  player: Bytes! # address
-  country3: Bytes! # bytes3
-  _lastTimestamp: BigInt! # uint256
+  winner: Bytes! # address
+  amount: BigInt! # uint256
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!

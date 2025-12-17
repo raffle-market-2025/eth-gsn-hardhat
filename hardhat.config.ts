@@ -55,4 +55,9 @@ export default defineConfig({
       accounts: ["dd8a8c85dcf602d113fb6d9aa0aff7a95bd8c89335f912d05783650e818b1639"],   // [configVariable("SEPOLIA_PRIVATE_KEY")],
     },
   },
+  verify: {
+    etherscan: {
+      apiKey: "KCVPNIBDSJYE11D61PCJSPT64E9HFXBMGT",   // process.env.ETHERSCAN_API_KEY, // or per-network apiKey object
+    },
+  },
 } as any);

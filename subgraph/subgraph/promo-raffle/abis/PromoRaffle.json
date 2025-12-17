@@ -34,32 +34,19 @@
       {
         "indexed": true,
         "internalType": "address",
-        "name": "from",
+        "name": "_player",
         "type": "address"
       },
       {
         "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "FundsReceived",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "player",
-        "type": "address"
+        "internalType": "string",
+        "name": "_ip",
+        "type": "string"
       },
       {
         "indexed": false,
         "internalType": "bytes3",
-        "name": "country3",
+        "name": "_country3",
         "type": "bytes3"
       },
       {
@@ -70,6 +57,44 @@
       }
     ],
     "name": "RaffleEnter",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "RaffleFundsReceived",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "winner",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "RafflePrizePaid",
     "type": "event"
   },
   {
@@ -108,6 +133,7 @@
   },
   {
     "inputs": [
+      { "internalType": "string", "name": "_ip", "type": "string" },
       { "internalType": "bytes3", "name": "_country3", "type": "bytes3" }
     ],
     "name": "enterRaffle",

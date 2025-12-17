@@ -1,7 +1,14 @@
 import { network } from "hardhat";
 import forwarderJson from "../build/gsn/Forwarder.json";
+import verifyWithRetries from "../utils/verifyWithRetries.js";
 
 async function main() {
+  const asBytes3 = (s: string) => {
+    const b = ethers.toUtf8Bytes(s);
+    if (b.length > 3) throw new Error("country must be exactly 2 or 3 ASCII chars");
+    return ethers.hexlify(b); // "UKR" -> "0x554b52"
+  };
+
   const { ethers } = await network.connect();
   const forwarderAddress = (forwarderJson as any).address;
   const promoFundAmount = ethers.parseEther("0.005"); // 0.00500 ETH
@@ -18,10 +25,16 @@ async function main() {
   const promoRaffle = await (Factory as any).deploy(...args, {
     value: promoFundAmount,
   });
-  console.log("Tx hash:", promoRaffle.deploymentTransaction()?.hash);
+  const deployTx = promoRaffle.deploymentTransaction();
+  console.log("Deploy promoRaffle tx hash:", deployTx?.hash);
+
+  // Wait a few confirmations before verifying (reduces “not indexed yet” failures)
+  if (deployTx) await deployTx.wait(5);
 
   await promoRaffle.waitForDeployment();
-  console.log("PromoRaffle deployed at:", await promoRaffle.getAddress());
+  const addressPromoRaffle = await promoRaffle.getAddress();
+  console.log("PromoRaffle deployed at:", addressPromoRaffle);
+  await verifyWithRetries(addressPromoRaffle, args);
 
   const FactoryNFT = await ethers.getContractFactory("PromoNFT", deployer);
   const baseTokenURI: string = "ipfs://bafybeidh6xhjihvmkha6yuxyjol7ubccdmvx6i3m6vdc6pawkykjlcx2ju/promo.json";
@@ -32,7 +45,9 @@ async function main() {
   console.log("Tx hash:", promoNFT.deploymentTransaction()?.hash);
 
   await promoNFT.waitForDeployment();
-  console.log("PromoNFT deployed at:", await promoNFT.getAddress());
+  const addressPromoNFT = await promoNFT.getAddress();
+  console.log("PromoNFT deployed at:", addressPromoNFT);
+  await verifyWithRetries(addressPromoNFT, argsNFT);
 
   // Register the PromoNFT address in the PromoRaffle contract
   const promoRaffleContract = await ethers.getContractAt("PromoRaffle", await promoRaffle.getAddress());
@@ -67,13 +82,7 @@ async function main() {
   //
   console.log("----- PromoRaffle test run started ---------------------------------------");
 
-  const asBytes3 = (s: string) => {
-    const b = ethers.toUtf8Bytes(s);
-    if (b.length > 3) throw new Error("country must be exactly 2 or 3 ASCII chars");
-    return ethers.hexlify(b); // "UKR" -> "0x554b52"
-  };
-
-  const enterTx = await (promoRaffleContract as any).enterRaffle(asBytes3("UKR"));
+  const enterTx = await promoRaffleContract.enterRaffle("192.168.0.1", asBytes3("UKR"));
   console.log("Entering PromoRaffle, tx hash:", enterTx.hash);
   await enterTx.wait();
   const playersEntered: bigint = await promoRaffleContract.getNumberOfPlayersEntered();

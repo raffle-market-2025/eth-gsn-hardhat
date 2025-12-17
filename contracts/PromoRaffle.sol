@@ -39,10 +39,12 @@ contract PromoRaffle is ERC2771Recipient {
     address promoNft = address(0);
     address promoNftSender = address(0);
 
-
-    event FundsReceived(address indexed from, uint256 amount);
-    event RaffleEnter( address indexed player, bytes3 country3, uint256 _lastTimestamp);
+    
+    event RaffleEnter( address indexed _player, string _ip, bytes3 _country3, uint256 _lastTimestamp);
     event WinnerPicked( uint256 cycle, address payable[] players, address indexed winner);
+    event RaffleFundsReceived( address indexed from, uint256 amount);
+    event RafflePrizePaid( address indexed winner, uint256 amount);
+
 
     constructor(
         uint _playersNeeded,
@@ -60,14 +62,14 @@ contract PromoRaffle is ERC2771Recipient {
     }
 
     receive() external payable {
-        emit FundsReceived(msg.sender, msg.value);
+        emit RaffleFundsReceived(msg.sender, msg.value);
     }
 
     function getBalance() external view returns (uint256) {
         return address(this).balance;
     }
 
-    function enterRaffle( bytes3 _country3) public  {       
+    function enterRaffle(string calldata _ip, bytes3 _country3) public  {       
         if (s_raffleState != RaffleState.OPEN) { revert Raffle__NotOpen(); }
 
         uint tokenCount = PromoNFT(promoNft).balanceOf(_msgSender());
@@ -80,7 +82,7 @@ contract PromoRaffle is ERC2771Recipient {
         tokensInRaffle.push(mintedTokenId);
 
         // Whenever we update a dynamic object like array or mapping, we should emit events
-        emit RaffleEnter( _msgSender(), _country3, s_lastTimestamp);
+        emit RaffleEnter(_msgSender(), _ip, _country3, s_lastTimestamp);
 
         if (tokensInRaffle.length >= playersNeeded) {
             _runRaffle();
@@ -92,7 +94,7 @@ contract PromoRaffle is ERC2771Recipient {
         bool isOpen = (RaffleState.OPEN == s_raffleState);
         bool hasPlayers = (tokensInRaffle.length >= playersNeeded);
         bool hasBalance = address(this).balance > 0;
-        upkeepNeeded = (isOpen  && hasPlayers && hasBalance);
+        upkeepNeeded = (isOpen && hasPlayers && hasBalance);
     }
 
     // External func are cheaper this func is automatically called by chainlink no
@@ -103,7 +105,7 @@ contract PromoRaffle is ERC2771Recipient {
     function _runRaffle() internal {
         bool upkeepNeeded = checkSet();
         if (!upkeepNeeded) {
-            revert Raffle__upkeepNotNeeded( address(this).balance, tokensInRaffle.length, uint256(s_raffleState));
+            revert Raffle__upkeepNotNeeded(address(this).balance, tokensInRaffle.length, uint256(s_raffleState));
         }
 
         s_raffleState = RaffleState.CALCULATING;
@@ -114,19 +116,21 @@ contract PromoRaffle is ERC2771Recipient {
 
         // Generate pseudo-random number using blockhash and timestamp, in range [0, s_players.length]
         uint256 indexOfWinner = uint256(
-                keccak256( abi.encodePacked(block.prevrandao, block.timestamp, blockhash(block.number - 1)))
+                keccak256(abi.encodePacked(block.prevrandao, block.timestamp, blockhash(block.number - 1)))
             ) % s_players.length;
 
         address payable recentWinner = s_players[indexOfWinner];
         s_recentWinner = recentWinner;
-        emit WinnerPicked( s_cycles, s_players, recentWinner);
+        emit WinnerPicked(s_cycles, s_players, recentWinner);
 
         s_cycles ++;
         s_lastTimestamp = block.timestamp;
 
         // transfer raffle balance onto recentWinner
-        (bool success, ) = recentWinner.call{value: address(this).balance}("");
+        uint256 _balance = address(this).balance;
+        (bool success, ) = recentWinner.call{value: _balance}("");
         if (!success) { revert Raffle__TransferFailed(); }
+        emit RafflePrizePaid(recentWinner, _balance);
 
         s_raffleState = RaffleState.OPEN;
 
