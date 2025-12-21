@@ -35,10 +35,12 @@ export default defineConfig({
   },
   networks: {
     hardhat: {
-      // this is an in-memory local node, no url needed
-      type: "edr-simulated",
+      type: "edr-simulated",   // 👈 important for HH3
       chainType: "l1",
-      chainId: 31337, // optional, but common
+      chainId: 31337,
+      forking: {
+        url: "https://sepolia.infura.io/v3/c53f023f8f7848b48a452cfaaa1d3718",            // configVariable("SEPOLIA_RPC_URL"),
+      },
     },
     hardhatMainnet: {
       type: "edr-simulated",

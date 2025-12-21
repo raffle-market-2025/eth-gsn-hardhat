@@ -49,6 +49,7 @@
   "scripts": {
     "node-start:local": "npx hardhat node",
     "gsn-start:local": "npx gsn start -n http://127.0.0.1:8545 --workdir build/gsn",
+    "gsn-deploy:sepolia": "npx gsn deploy -n 'https://sepolia.infura.io/v3/c53f023f8f7848b48a452cfaaa1d3718' --mnemonic ./mnemonic.txt --testToken --yes --burnAddress='0x15e30a95a101f0Cc604e99627b9308C8C7992B4F' --devAddress='0x15e30a95a101f0Cc604e99627b9308C8C7992B4F'",
     "npx:compile": "npx hardhat compile && npx hardhat clean",
     "deploy:hardhat:promo": "npx hardhat run ./deploy/01-promoRaffle.ts --network hardhat",
     "deploy:sepolia:promo": "npx hardhat run ./deploy/01-promoRaffle.ts --network sepolia",
