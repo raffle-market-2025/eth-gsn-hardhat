@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 
-contract PromoNFT is ERC721Enumerable, Ownable, Pausable {
+contract RaffleNFT is ERC721Enumerable, Ownable, Pausable {
     using SafeMath for uint256;
     using Strings for uint256;
     using Counters for Counters.Counter;
@@ -17,11 +17,11 @@ contract PromoNFT is ERC721Enumerable, Ownable, Pausable {
     uint public PRICE = 0 wei;
 
     string public baseTokenURI;
-    address public promoRaffleAddress;
+    address public raffleAddress;
 
-    constructor(string memory baseURI, address _promoRaffleAddress) ERC721("Promo Raffle NFT", "PromoRaffle") {
+    constructor(string memory baseURI, address _raffleAddress) ERC721("Raffle NFT", "Lucky") {
         setBaseURI(baseURI);
-        setPromoRaffleAddress(_promoRaffleAddress);
+        setRaffleAddress(_raffleAddress);
         _tokenIds.increment();
     }
 	
@@ -42,8 +42,8 @@ contract PromoNFT is ERC721Enumerable, Ownable, Pausable {
         baseTokenURI = _baseTokenURI;
     }
 
-    function setPromoRaffleAddress(address _promoRaffleAddress) public onlyOwner {
-        promoRaffleAddress = _promoRaffleAddress;
+    function setRaffleAddress(address _raffleAddress) public onlyOwner {
+        raffleAddress = _raffleAddress;
     }
 	
 	function setPrice(uint _price) public onlyOwner {
@@ -51,7 +51,7 @@ contract PromoNFT is ERC721Enumerable, Ownable, Pausable {
     }
 
     function mintNFTs(address username) public returns(bool transferred, uint mintedTokenId) {
-        require(msg.sender == promoRaffleAddress, "Not a raffle contract call");
+        require(msg.sender == raffleAddress, "Not from a raffle contract call");
         mintedTokenId = _mintSingleNFT(username);
         transferred = true;
     }
@@ -87,7 +87,7 @@ contract PromoNFT is ERC721Enumerable, Ownable, Pausable {
     // }
 
     function burn(address owner) public {
-        require(msg.sender == promoRaffleAddress, "Not a raffle contract call");
+        require(msg.sender == raffleAddress, "Not from a raffle contract call");
         uint[] memory tokenIds = tokensOfOwner(owner);
 
         for (uint i = 0; i < tokenIds.length; i++) {

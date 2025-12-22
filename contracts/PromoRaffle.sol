@@ -8,7 +8,7 @@
 pragma solidity ^0.8.28;
 
 import "@opengsn/contracts/src/ERC2771Recipient.sol";
-import "./PromoNFT.sol";
+import "./RaffleNFT.sol";
 
 error Raffle__TransferFailed();
 error Raffle__NotOpen();
@@ -72,10 +72,10 @@ contract PromoRaffle is ERC2771Recipient {
     function enterRaffle(string calldata _ip, bytes3 _country3) public  {       
         if (s_raffleState != RaffleState.OPEN) { revert Raffle__NotOpen(); }
 
-        uint tokenCount = PromoNFT(promoNft).balanceOf(_msgSender());
+        uint tokenCount = RaffleNFT(promoNft).balanceOf(_msgSender());
         if(tokenCount > 0) { revert Raffle__ManyTicketsOnWallet(); }
 
-        (bool transferred, uint mintedTokenId) = PromoNFT(promoNft).mintNFTs(_msgSender());        
+        (bool transferred, uint mintedTokenId) = RaffleNFT(promoNft).mintNFTs(_msgSender());        
         require(transferred, "Can't transfer");
 
         //s_players.push(payable(_msgSender()));
@@ -111,7 +111,7 @@ contract PromoRaffle is ERC2771Recipient {
         s_raffleState = RaffleState.CALCULATING;
 
         for(uint i = 0; i < tokensInRaffle.length; i++) {            
-            s_players.push( payable(PromoNFT(promoNft).ownerOf(tokensInRaffle[i])));
+            s_players.push( payable(RaffleNFT(promoNft).ownerOf(tokensInRaffle[i])));
         }
 
         // Generate pseudo-random number using blockhash and timestamp, in range [0, s_players.length]
@@ -135,7 +135,7 @@ contract PromoRaffle is ERC2771Recipient {
         s_raffleState = RaffleState.OPEN;
 
         for (uint i = 0; i < s_players.length; i++) {
-           PromoNFT(promoNft).burn(s_players[i]);  
+           RaffleNFT(promoNft).burn(s_players[i]);  
         }
         while(s_players.length > 0) {
             s_players.pop();
