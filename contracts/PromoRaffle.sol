@@ -132,15 +132,14 @@ contract PromoRaffle is ERC2771Recipient {
         if (!success) { revert Raffle__TransferFailed(); }
         emit RafflePrizePaid(recentWinner, _balance);
 
-        s_raffleState = RaffleState.OPEN;
+        RaffleNFT(promoNft).burnAll();
 
-        for (uint i = 0; i < s_players.length; i++) {
-           RaffleNFT(promoNft).burn(s_players[i]);  
-        }
         while(s_players.length > 0) {
             s_players.pop();
             tokensInRaffle.pop();
         }
+
+        s_raffleState = RaffleState.OPEN;
     }
 
     function getTokensIds() public view returns (uint[] memory) {

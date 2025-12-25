@@ -16,6 +16,7 @@
   },
   "homepage": "https://github.com/raffle-market-2025/eth-gsn-hardhat#readme",
   "devDependencies": {
+    "@chainlink/contracts": "^1.5.0",
     "@graphprotocol/graph-cli": "^0.98.1",
     "@nomicfoundation/hardhat-ethers": "^4.0.3",
     "@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.2",
