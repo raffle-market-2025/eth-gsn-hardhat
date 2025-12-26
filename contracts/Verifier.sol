@@ -7,19 +7,26 @@ import "./Raffle.sol";
 contract Verifier is IVerifier {
     address public marketplace;
     address public owner;
+
     constructor() {
         owner = msg.sender;
         marketplace = msg.sender;
     }
-    function setMarketplace(address _marketplace) external onlyOwner{
-       marketplace = _marketplace;
+
+    function setMarketplace(address _marketplace) external onlyOwner {
+        marketplace = _marketplace;
     }
-    function updateOwner(address _owner) external onlyOwner{
-        owner=_owner;
+
+    function updateOwner(address _owner) external onlyOwner {
+        owner = _owner;
     }
-    function deployRaffle(
-        toPassFunc memory data
-    ) external onlyMarketplace returns(address raffle) {
+
+    function deployRaffle(toPassFunc memory data)
+        external
+        onlyMarketplace
+        returns (address raffle)
+    {
+        // NOTE: RaffleContract constructor expects 8 args in your current Raffle.sol
         RaffleContract raffleDeployed = new RaffleContract(
             data._raffleId,
             data._durationOfRaffle,
@@ -28,12 +35,10 @@ contract Verifier is IVerifier {
             data._marketplceOwner,
             data._prizes,
             data._stages,
-            data.vrfCoordinatorV2,
-            marketplace,
-            data.subscriptionId
+            marketplace
         );
-        raffle = address(raffleDeployed);
 
+        raffle = address(raffleDeployed);
     }
 
     modifier onlyMarketplace() {
@@ -41,9 +46,8 @@ contract Verifier is IVerifier {
         _;
     }
 
-    modifier onlyOwner(){
-        require(msg.sender==owner,"Only Owner is allowed");
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only Owner is allowed");
         _;
     }
 }
-

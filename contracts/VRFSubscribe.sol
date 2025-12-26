@@ -1,98 +1,129 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
-import '@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol';
-import '@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol';
+import {LinkTokenInterface} from "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
+import {IVRFCoordinatorV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/interfaces/IVRFCoordinatorV2Plus.sol";
 
+/// @dev Minimal native-funding interface for VRF v2.5 Coordinator.
+///      In VRF v2.5 subscriptions can be funded with native token in addition to LINK. :contentReference[oaicite:1]{index=1}
+interface IVRFV2_5NativeFund {
+    function fundSubscriptionWithNative(uint256 subId) external payable;
+}
 
-contract VRFV2SubscriptionManager   {
-    VRFCoordinatorV2Interface COORDINATOR;
-    LinkTokenInterface LINKTOKEN;
+contract VRFV2SubscriptionManager {
+    /* ========================= Errors ========================= */
+    error OnlyOwner();
+    error ZeroAddress();
+    error ZeroAmount();
+    error SubscriptionNotCreated();
 
-    // Goerli coordinator. For other networks,
-    // see https://docs.chain.link/docs/vrf-contracts/#configurations
-    address vrfCoordinator ;
-    address owner;
+    /* ========================= Events ========================= */
+    event OwnerUpdated(address indexed oldOwner, address indexed newOwner);
+    event SubscriptionCreated(uint256 indexed subId);
+    event SubscriptionFundedLink(uint256 indexed subId, uint256 amount);
+    event SubscriptionFundedNative(uint256 indexed subId, uint256 amount);
+    event ConsumerAdded(uint256 indexed subId, address indexed consumer);
+    event ConsumerRemoved(uint256 indexed subId, address indexed consumer);
+    event SubscriptionCanceled(uint256 indexed subId, address indexed receivingWallet);
 
-    // Goerli LINK token contract. For other networks, see
-    // https://docs.chain.link/docs/vrf-contracts/#configurations
-    address link_token_contract ;
+    /* ========================= Immutables ========================= */
+    IVRFCoordinatorV2Plus public immutable COORDINATOR;
+    LinkTokenInterface public immutable LINKTOKEN;
 
-    
+    /* ========================= State ========================= */
+    address public owner;
+    uint256 public s_subscriptionId;
 
-    
+    /* ========================= Constructor ========================= */
+    constructor(address vrfCoordinator, address linkToken) {
+        if (vrfCoordinator == address(0) || linkToken == address(0)) revert ZeroAddress();
 
-    // For this example, retrieve 2 random values in one request.
-    // Cannot exceed VRFCoordinatorV2.MAX_NUM_WORDS.
+        COORDINATOR = IVRFCoordinatorV2Plus(vrfCoordinator);
+        LINKTOKEN = LinkTokenInterface(linkToken);
 
+        owner = msg.sender;
 
-    // Storage parameters
-    
-    
-    uint64 public s_subscriptionId;
-    
-
-    constructor(address _vrfCoordinator, address linkToken)  {
-        vrfCoordinator = _vrfCoordinator;
-        link_token_contract = linkToken;
-        COORDINATOR = VRFCoordinatorV2Interface(vrfCoordinator);
-        LINKTOKEN = LinkTokenInterface(link_token_contract);
-        owner=msg.sender;
-        
-        //Create a new subscription when you deploy the contract.
-        createNewSubscription();
+        _createNewSubscription();
     }
 
-    // Assumes the subscription is funded sufficiently.
-    
-    // Create a new subscription when the contract is initially deployed.
-    function createNewSubscription() internal onlyOwner  {
-        s_subscriptionId = COORDINATOR.createSubscription();
-        // Add this contract as a consumer of its own subscription.
-        COORDINATOR.addConsumer(s_subscriptionId, address(this));
+    /* ========================= Ownership ========================= */
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert OnlyOwner();
+        _;
     }
 
-    // Assumes this contract owns link.
-    // 1000000000000000000 = 1 LINK
-    function topUpSubscription(uint256 amount) public onlyOwner {
+    function updateOwner(address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert ZeroAddress();
+        address old = owner;
+        owner = newOwner;
+        emit OwnerUpdated(old, newOwner);
+    }
+
+    /* ========================= Subscription lifecycle ========================= */
+
+    function _createNewSubscription() internal onlyOwner {
+        // VRF v2.5 uses the same subscription concept, but supports both LINK and native balances. :contentReference[oaicite:2]{index=2}
+        uint256 subId = COORDINATOR.createSubscription();
+        s_subscriptionId = subId;
+
+        // Add this contract as a consumer of its own subscription (optional, but convenient).
+        COORDINATOR.addConsumer(subId, address(this));
+
+        emit SubscriptionCreated(subId);
+    }
+
+    /// @notice Fund subscription with LINK.
+    /// @dev Requires this contract to hold LINK.
+    function topUpSubscriptionLink(uint256 amount) external onlyOwner {
+        if (s_subscriptionId == 0) revert SubscriptionNotCreated();
+        if (amount == 0) revert ZeroAmount();
+
+        // Standard LINK funding: LINK.transferAndCall(Coordinator, amount, abi.encode(subId))
         LINKTOKEN.transferAndCall(address(COORDINATOR), amount, abi.encode(s_subscriptionId));
+
+        emit SubscriptionFundedLink(s_subscriptionId, amount);
     }
 
-    function addConsumer(address consumerAddress) public onlyOwner {
-        // Add a consumer contract to the subscription.
+    /// @notice Fund subscription with native token (e.g., Sepolia ETH).
+    /// @dev Coordinator must support fundSubscriptionWithNative (VRF v2.5). :contentReference[oaicite:3]{index=3}
+    function fundSubscriptionNative() external payable onlyOwner {
+        if (s_subscriptionId == 0) revert SubscriptionNotCreated();
+        if (msg.value == 0) revert ZeroAmount();
+
+        IVRFV2_5NativeFund(address(COORDINATOR)).fundSubscriptionWithNative{value: msg.value}(s_subscriptionId);
+
+        emit SubscriptionFundedNative(s_subscriptionId, msg.value);
+    }
+
+    function addConsumer(address consumerAddress) external onlyOwner {
+        if (s_subscriptionId == 0) revert SubscriptionNotCreated();
+        if (consumerAddress == address(0)) revert ZeroAddress();
+
         COORDINATOR.addConsumer(s_subscriptionId, consumerAddress);
+        emit ConsumerAdded(s_subscriptionId, consumerAddress);
     }
 
     function removeConsumer(address consumerAddress) external onlyOwner {
-        // Remove a consumer contract from the subscription.
+        if (s_subscriptionId == 0) revert SubscriptionNotCreated();
+        if (consumerAddress == address(0)) revert ZeroAddress();
+
         COORDINATOR.removeConsumer(s_subscriptionId, consumerAddress);
+        emit ConsumerRemoved(s_subscriptionId, consumerAddress);
     }
 
     function cancelSubscription(address receivingWallet) external onlyOwner {
-        // Cancel the subscription and send the remaining LINK to a wallet address.
+        if (s_subscriptionId == 0) revert SubscriptionNotCreated();
+        if (receivingWallet == address(0)) revert ZeroAddress();
+
         COORDINATOR.cancelSubscription(s_subscriptionId, receivingWallet);
+
+        emit SubscriptionCanceled(s_subscriptionId, receivingWallet);
         s_subscriptionId = 0;
     }
 
-    // Transfer this contract's funds to an address.
-    // 1000000000000000000 = 1 LINK
-    function withdraw(uint256 amount, address to) external onlyOwner {
-        LINKTOKEN.transfer(to, amount);
-    }
+    /* ========================= Convenience views ========================= */
 
-    function getSubscription() external view returns(uint256){
+    function getSubscriptionId() external view returns (uint256) {
         return s_subscriptionId;
     }
-
-    function _onlyOwner() view internal{
-        require(msg.sender==owner);
-        
-          
-    }
-    modifier onlyOwner(){
-        _onlyOwner();
-        _;
-    }
-    
 }

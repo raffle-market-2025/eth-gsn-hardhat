@@ -2,6 +2,10 @@ import { network } from "hardhat";
 import forwarderJson from "../build/gsn/Forwarder.json";
 import verifyWithRetries from "../utils/verifyWithRetries.js";
 
+// NFT деплоится внешним скриптом/фабрикой, логика такая:
+// Deploy PromoRaffle
+// Deploy RaffleNFT(baseURI, promoRaffleAddress, "Raffle NFT", "Lucky")
+// Call promoRaffle.setPromoNftAddress(raffleNftAddress)
 async function main() {
   const asBytes3 = (s: string) => {
     const b = ethers.toUtf8Bytes(s);

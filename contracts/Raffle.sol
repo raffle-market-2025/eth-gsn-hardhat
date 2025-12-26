@@ -2,90 +2,72 @@
 pragma solidity ^0.8.28;
 
 import "./LibraryStruct.sol";
-import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
-import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
-import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol"; // we inherit from the interfaces just to make sure that we implement those functions
 import "./IRaffleMarketplace.sol";
 import "./RaffleNFT.sol";
 
-/*
-    TODO:
-    register the contract with chainlink keepers
-    send prizes to the winners - need to discuss this
-    send the money collected to the hoster - need to discuss this
-    if the threshold is not passed, revert the lottery and send the tickets money back to the players
-   
-
- */
-
 error Raffle__NotEnougEthEntered();
 error Raffle__NotOpen();
-error Raffle__UpkeepNotNeeded(uint256 state, uint256 balance, uint256 playersLength);
 error Raffle__OnlyHosterAllowed();
 error Raffle__NotEnoughTicketsAvailable();
 error Raffle__OnlyMarketplaceOwnerAllowed();
-error Raffle__RaffleNotOpen(RaffleLibrary.RaffleState raffleState);
 error Raffle__RaffleNotFinished();
+error Raffle__NotReadyToDraw();
+error Raffle__NotCalculating();
 
-contract RaffleContract is VRFConsumerBaseV2, KeeperCompatibleInterface {
-    // interface of marketplace contract to update the winners
-    IRaffleMarketplace raffleMarketplace;
+// --- Automation trust (Variant 1) ---
+error Raffle__OnlyMarketplaceOrAutomation();
+error Raffle__AutomationAlreadySet();
+error Raffle__InvalidAutomation();
 
-    // mapping with stageType to stages in a raffle
-    mapping(uint256 => RaffleLibrary.RaffleStage) raffleStages;
-    // array of raffle stages
-    RaffleLibrary.RaffleStage[] raffleStagesArray;
+contract RaffleContract {
+    IRaffleMarketplace public raffleMarketplace;
 
-    // players struct to track which player bought which ticket at what price, needed to send the money back if the lottery is reverted
+    // stageType(uint) => stage data
+    mapping(uint256 => RaffleLibrary.RaffleStage) private raffleStages;
+    RaffleLibrary.RaffleStage[] private raffleStagesArray;
 
-    // raffle id in the marketplace contract
-    uint256 raffleId;
-    // how long should the raffle go on
-    uint256 durationOfRaffle;
-    // minimum amount of money collected from selling the tickets to say that the raffle is successfull
-    uint256 threshold;
-    // hoster of raffle
-    address payable raffleOwner;
-    // no of winners to pick, equal to the number of prizes available
-    uint32 noOfWinnersToPick;
-    // array of players entered in the raffle
-    address payable[] private s_players;
-    // tokens ids in Raffle
+    uint256 public raffleId;
+    uint256 public durationOfRaffle; // end timestamp
+    uint256 public threshold;        // percent threshold
+
+    address payable public raffleOwner;
+    address public marketplaceOwner;
+    address public marketplace;
+
+    // trusted Automation/VRF orchestrator (RaffleAutomationVRF.sol)
+    address public automation;
+
+    uint32 public noOfWinnersToPick;
+
+    // NFT contract address for tickets
+    address public raffleNFT;
+
+    // ticket list (id + ticketPrice for refunds)
     RaffleLibrary.Players[] private tokensInRaffle;
-    // state of raffle - OPEN,CALCULATIN
+
+    // state machine
     RaffleLibrary.RaffleState private s_raffleState;
-    // current stage in which the raffle is in - SALE,PRESALE etc. converted to uint
     uint256 private currentStage;
 
-    address marketplaceOwner;
-    //address of NFT smart contract
-    address RaffleNFt;
-    //address of marketplace
-    address marketplace;
+    // winners (повтор адресов допускается)
+    address payable[] private s_recentWinners;
 
-    // Chainlink variables
-
-    // vrfCoordinatorV2 contract which we use to reques the random number
-    VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
-    // minimum gas we are willing to pay
-    bytes32 private immutable i_gasLane;
-    // our contract subscription id
-    uint64 private immutable i_subscriptionId;
-    // how much confirmations should the chainlink node wait before sending the response
-    uint16 private constant REQUEST_CONFIRMATIONS = 3;
-    // how much gas should chainlink node use while calling fulfillRandomWords of our contract
-    uint32 private immutable i_callbackGasLimit;
-    // array of winners picked after the raffle is completed
-    address[] private s_recentWinners;
-
+    // prizes storage
     RaffleLibrary.RafflePrize[] private prizes;
 
-    //events
+    // cleanup cursor for batch burns
+    uint256 private s_cleanupCursor;
+
+    // optional: last derived seed (for trace/debug)
+    bytes32 private s_seed;
+
     event RaffleEntered(address indexed player);
-    // event emitted when we request a random number
-    event RequestedRaffleWinner(uint256 indexed reqId);
-    // event emitted when a player enters a raffle
-    event WinnersPicked(address payable[] indexed winners);
+    event WinnersPicked(address payable[] winners);
+    event FundsReceived(address indexed from, uint256 amount);
+    event CleanupProgress(uint256 from, uint256 to);
+
+    // --- Automation wiring ---
+    event AutomationSet(address indexed automation);
 
     constructor(
         uint256 _raffleId,
@@ -95,95 +77,113 @@ contract RaffleContract is VRFConsumerBaseV2, KeeperCompatibleInterface {
         address _marketplceOwner,
         RaffleLibrary.RafflePrize[] memory _prizes,
         RaffleLibrary.RaffleStage[] memory _stages,
-        address vrfCoordinatorV2,
-        address _marketplace,
-        uint64 subscriptionId
-    ) VRFConsumerBaseV2(vrfCoordinatorV2) {
+        address _marketplace
+    ) payable {
+        require(_marketplace != address(0), "Raffle: marketplace address = 0");
+        require(_raffleOwner != address(0), "Raffle: owner address = 0");
+        require(_marketplceOwner != address(0), "Raffle: marketplaceOwner=0");
+
         raffleId = _raffleId;
         durationOfRaffle = block.timestamp + _durationOfRaffle;
         threshold = _threshold;
         raffleOwner = _raffleOwner;
+
         _addPrizeInStorage(_prizes);
         _addStageInStorage(_stages);
+
         noOfWinnersToPick = uint32(prizes.length);
-        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
-        i_gasLane = 0x4b09e658ed251bcafeebbc69400383d49f344ace09b9576fe248bb02c003fe9f;
-        i_subscriptionId = subscriptionId;
-        i_callbackGasLimit = 2500000;
+
+        marketplaceOwner = _marketplceOwner;
+        marketplace = _marketplace;
         raffleMarketplace = IRaffleMarketplace(_marketplace);
-        // once a raffle contract is deployed, the state is OPEN
+
         s_raffleState = RaffleLibrary.RaffleState.OPEN;
-        marketplaceOwner = _marketplceOwner;     
-        marketplace = _marketplace;   
     }
 
-    function createNftContract(string memory _baseURI, string memory _name, string memory _symbol) external onlyMarketplace {
-            uint _max_supply = totalTickets();
-            RaffleNFTs raffleNfts = new RaffleNFTs(
-                    _baseURI,
-                    address(this),
-                    _name,
-                    _symbol,
-                    _max_supply
-            );
-            RaffleNFt = address(raffleNfts);
-
+    receive() external payable {
+        emit FundsReceived(msg.sender, msg.value);
     }
 
-    // Enter the raffle
-    //TODO: fix error here
+    fallback() external payable {
+        emit FundsReceived(msg.sender, msg.value);
+    }
+
+    // ---------------------------------------------------------------------
+    // Wiring: NFT + Automation (called by Marketplace / MarketplaceOwner)
+    // ---------------------------------------------------------------------
+
+    function createNftContract(
+        string memory baseURI,
+        string memory name_,
+        string memory symbol_
+    ) external onlyMarketplace {
+        require(raffleNFT == address(0), "Raffle: NFT already set");
+        RaffleNFT nft = new RaffleNFT(baseURI, address(this), name_, symbol_);
+        raffleNFT = address(nft);
+    }
+
+    /// @notice Set trusted Automation/VRF orchestrator (only once).
+    /// @dev Called by marketplaceOwner (EOA/admin) after deploying RaffleAutomationVRF.
+    function setAutomation(address _automation) external onlyMarketplaceOwner {
+        if (_automation == address(0)) revert Raffle__InvalidAutomation();
+        if (automation != address(0)) revert Raffle__AutomationAlreadySet();
+        automation = _automation;
+        emit AutomationSet(_automation);
+    }
+
+    // ---------------------------------------------------------------------
+    // Enter raffle
+    // ---------------------------------------------------------------------
+
     function enterRaffle() external payable isRaffleOpen {
-        // we check if the total tickets of current stage are sold
-        /* For example, there are 100 tickets in PRESALE stage and all 100 are sold, then we automatically move to SALE stage whose ticket price is higher*/
+        require(raffleNFT != address(0), "Raffle: NFT not created");
+
         updateCurrentStage();
         RaffleLibrary.RaffleStage storage curStage = raffleStages[currentStage];
-        // if money sent is less than the ticket price, revert
-        if (msg.value < curStage.ticketPrice) {
-            revert Raffle__NotEnougEthEntered();
-        }
-        // calculate how much tickets did the user bought
-        // for example, if the ticket price is 10 MATIC and the user sent 100 MATIC, then the tickets bought = 10
-        // more the tickets bought, more is the chance of winning the raffle
+
+        if (msg.value < curStage.ticketPrice) revert Raffle__NotEnougEthEntered();
+
         uint256 ticketsBought = msg.value / curStage.ticketPrice;
 
         if (ticketsBought > (curStage.ticketsAvailable - curStage.ticketsSold)) {
             revert Raffle__NotEnoughTicketsAvailable();
         }
+
+        // enforce max supply from stages
+        require(tokensInRaffle.length + ticketsBought <= totalTickets(), "Raffle: sold out");
+
         curStage.ticketsSold += ticketsBought;
 
         for (uint256 i = 0; i < ticketsBought; i++) {
-            (bool transferred, uint mintedTokenId) = RaffleNFTs(RaffleNFt).mintNFTs(msg.sender);
-            require(transferred, "Can't transfer");
+            (bool transferred, uint256 mintedTokenId) = RaffleNFT(raffleNFT).mintNFTs(msg.sender);
+            require(transferred, "Raffle: mint failed");
             tokensInRaffle.push(RaffleLibrary.Players(curStage.ticketPrice, mintedTokenId));
-            //s_players.push(RaffleLibrary.Players(curStage.ticketPrice, msg.sender));
         }
+
+        // mirror to stages array for views
         for (uint256 i = 0; i < raffleStagesArray.length; i++) {
             if (raffleStagesArray[i].stageType == curStage.stageType) {
                 raffleStagesArray[i].ticketsSold += ticketsBought;
             }
         }
-        // TODO: uncomment this after tests
-        raffleMarketplace.updateTicketsSold(raffleId, curStage.stageType, ticketsBought,msg.sender);
-        updateCurrentStage(); //TODO: Not working, need to fix this, critical 
+
+        raffleMarketplace.updateTicketsSold(raffleId, curStage.stageType, ticketsBought, msg.sender);
+
+        updateCurrentStage(); // (поведение оставлено как у вас)
         emit RaffleEntered(msg.sender);
     }
 
-    //TODO: fix this major bug!!!!
-    // //internal function used to update the current stage to  next stage
     function updateCurrentStage() internal {
         uint256 nextStageType;
         if (raffleStages[currentStage].ticketsSold == raffleStages[currentStage].ticketsAvailable) {
-
             for (uint256 i = 0; i < raffleStagesArray.length; i++) {
-             
                 if (
                     uint256(raffleStagesArray[i].stageType) > currentStage &&
                     raffleStagesArray[i].ticketsAvailable != 0
-                ) { 
-                  
+                ) {
                     nextStageType = uint256(raffleStagesArray[i].stageType);
                     currentStage = nextStageType;
-                    
+
                     raffleMarketplace.updateCurrentOngoingStage(
                         raffleId,
                         RaffleLibrary.StageType(currentStage)
@@ -194,126 +194,190 @@ contract RaffleContract is VRFConsumerBaseV2, KeeperCompatibleInterface {
         }
     }
 
-    /* This func is called by chainlink keeper node to check if we can perform upkeep or not
-    If the result is true, then we pick a random number:
-    1. The time interval of raffle should end
-    2. The threshold should pass
-    3. Our subscription is funded with link
-    4. The lottery should be in OPEN state
-    */
+    // ---------------------------------------------------------------------
+    // Marketplace/Automation-driven draw lifecycle (VRF seed -> keccak -> unique indices)
+    // ---------------------------------------------------------------------
 
-    function checkUpkeep(
-        bytes memory /*checkData*/
-    )
-        public
-        view
-        override
-        returns (
-            bool upkeepNeeded,
-            bytes memory /*performData */
-        )
-    {
+    function isReadyToDraw() public view returns (bool) {
         bool isOpen = (s_raffleState == RaffleLibrary.RaffleState.OPEN);
         bool isTimeFinished = (block.timestamp > durationOfRaffle);
         bool hasThreshold = isThresholdPassed();
-        bool hasPlayers = (tokensInRaffle.length > 0);
-        upkeepNeeded = (isOpen && isTimeFinished && hasPlayers && hasThreshold);
+        bool hasTickets = (tokensInRaffle.length > 0);
+        return (isOpen && isTimeFinished && hasTickets && hasThreshold);
     }
 
-    // to pick a random winner
-    // get a random numbber and do something with it
-    // chainlink vrf is a 2 tx process, its intentional as having it in 2 txs is better than having in 1tx, to prevent the manipulation
+    /// @notice Marketplace should request only 1 VRF word (seed).
+    function getNumWords() external pure returns (uint32) {
+        return 1;
+    }
 
-    // This function just requests for a random number, some other func will return the random no
-    function performUpkeep(
-        bytes memory /*performUpkeep */
-    ) external override {
-        (bool upkeepNeeded, ) = checkUpkeep("");
-
-        if (!upkeepNeeded) {
-            revert Raffle__UpkeepNotNeeded(
-                uint256(s_raffleState),
-                address(this).balance,
-                tokensInRaffle.length
-            );
-        }
-
+    function startDraw() external onlyMarketplace {
+        if (!isReadyToDraw()) revert Raffle__NotReadyToDraw();
         s_raffleState = RaffleLibrary.RaffleState.CALCULATING;
-        // TODO: uncomment below after test
-        raffleMarketplace.updateRaffleState(raffleId,s_raffleState);
-
-        uint256 requestId = i_vrfCoordinator.requestRandomWords(
-            i_gasLane, // gas lane or key hash - the maximum number of gas in wei you are willing to spend for random number,
-            i_subscriptionId, // the id of the subscription of chainlink vrf,
-            REQUEST_CONFIRMATIONS, // requestConfirmations - How many confirmations the chhainlink node should wait before sending the response
-            i_callbackGasLimit, // callbackGasLimit - how many gas should the chainlink node use to call fulfill random words of our contract
-            noOfWinnersToPick // noOfWinnersToPick - how many random numbers  to pick
-        );
-        emit RequestedRaffleWinner(requestId);
+        raffleMarketplace.updateRaffleState(raffleId, s_raffleState);
     }
 
-    // returns the random number, this func is called by chainlink vrf
-    function fulfillRandomWords(
-        uint256, /*requestId*/
-        uint256[] memory randomWords
-    ) internal override {
-        //address[] memory temp = RaffleLibrary._shuffle(s_players);
-        for(uint i = 0; i < tokensInRaffle.length; i++) {            
-            s_players.push(payable(RaffleNFTs(RaffleNFt).ownerOf(tokensInRaffle[i].id)));
+    function finalizeFromRandomWords(uint256[] calldata randomWords) external onlyMarketplace {
+        if (s_raffleState != RaffleLibrary.RaffleState.CALCULATING) revert Raffle__NotCalculating();
+        require(randomWords.length == 1, "Raffle: need 1 word");
+
+        uint256 m = tokensInRaffle.length;
+        require(m > 0, "Raffle: no tickets");
+
+        uint256 k = noOfWinnersToPick;
+        require(k > 0 && k <= m, "Raffle: bad k");
+
+        // Domain separation: привязываем seed к конкретному raffle/контракту/объёму
+        bytes32 seed = keccak256(
+            abi.encodePacked(
+                bytes32(randomWords[0]),
+                address(this),
+                raffleId,
+                m
+            )
+        );
+
+        (uint256[] memory idx, bytes32 nextSeed) = _pickUniqueTicketIndices(seed, k, m);
+        s_seed = nextSeed;
+
+        address payable[] memory winners = new address payable[](k);
+        for (uint256 i = 0; i < k; i++) {
+            uint256 tokenId = tokensInRaffle[idx[i]].id;
+            winners[i] = payable(RaffleNFT(raffleNFT).ownerOf(tokenId));
         }
-        address payable[] memory winners = new address payable[](noOfWinnersToPick);
-        for (uint256 i = 0; i < randomWords.length; i++) {
-            uint256 randomIndex = randomWords[i] % tokensInRaffle.length;
-            winners[i] = s_players[randomIndex];
-        }
+
+        // store and notify marketplace
         s_recentWinners = winners;
-        // update the winners in the marketplace contract
         raffleMarketplace.updateWinners(raffleId, winners);
+
         s_raffleState = RaffleLibrary.RaffleState.FINISHED;
         raffleMarketplace.updateRaffleState(raffleId, s_raffleState);
 
         emit WinnersPicked(winners);
 
-        for (uint i = 0; i < s_players.length; i++) {
-           RaffleNFTs(RaffleNFt).burn(s_players[i]);  
-        }        
+        // No O(m) burn here. Cleanup is batched.
     }
 
-    // function to revert the lottery if its not successfull
-    function revertLottery() external onlyHoster onlyMarketplaceOwner {
-        require(s_raffleState == RaffleLibrary.RaffleState.OPEN);
-        for (uint256 i = 0; i < tokensInRaffle.length; i++) {
-            payable(RaffleNFTs(RaffleNFt).ownerOf(tokensInRaffle[i].id)).transfer(tokensInRaffle[i].ticketPrice);
+    function _pickUniqueTicketIndices(bytes32 seed, uint256 k, uint256 m)
+        internal
+        pure
+        returns (uint256[] memory idx, bytes32 nextSeed)
+    {
+        require(k <= m, "k>m");
+        idx = new uint256[](k);
+
+        bytes32 s = seed;
+        for (uint256 i = 0; i < k; i++) {
+            while (true) {
+                // seed evolves every attempt to avoid infinite loops on collisions
+                s = keccak256(abi.encodePacked(s, i));
+                uint256 cand = uint256(s) % m;
+
+                bool dup = false;
+                for (uint256 j = 0; j < i; j++) {
+                    if (idx[j] == cand) { dup = true; break; }
+                }
+                if (!dup) { idx[i] = cand; break; }
+            }
         }
+        nextSeed = s;
+    }
+
+    // ---------------------------------------------------------------------
+    // Batched cleanup: burn tickets by tokenId (cheap, no scanning)
+    // ---------------------------------------------------------------------
+
+    /// @notice Burn tickets in batches after FINISHED or REVERTED.
+    /// @dev Call repeatedly until cleanupCursor == tokensInRaffle.length.
+    function cleanupBurn(uint256 maxCount) external {
+        require(
+            s_raffleState == RaffleLibrary.RaffleState.FINISHED ||
+            s_raffleState == RaffleLibrary.RaffleState.REVERTED,
+            "Raffle: not finalized"
+        );
+        require(raffleNFT != address(0), "Raffle: NFT not created");
+        require(maxCount > 0, "Raffle: maxCount=0");
+
+        uint256 m = tokensInRaffle.length;
+        uint256 from = s_cleanupCursor;
+        if (from >= m) return;
+
+        uint256 to = from + maxCount;
+        if (to > m) to = m;
+
+        uint256 count = to - from;
+        uint256[] memory ids = new uint256[](count);
+
+        for (uint256 i = 0; i < count; i++) {
+            ids[i] = tokensInRaffle[from + i].id;
+        }
+
+        // Effects then interaction (reverts roll back cursor anyway)
+        s_cleanupCursor = to;
+
+        RaffleNFT(raffleNFT).burnBatch(ids);
+
+        emit CleanupProgress(from, to);
+    }
+
+    function cleanupCursor() external view returns (uint256) {
+        return s_cleanupCursor;
+    }
+
+    function cleanupRemaining() external view returns (uint256) {
+        uint256 m = tokensInRaffle.length;
+        if (s_cleanupCursor >= m) return 0;
+        return m - s_cleanupCursor;
+    }
+
+    // ---------------------------------------------------------------------
+    // Refund / prizes
+    // ---------------------------------------------------------------------
+
+    function revertLottery() external onlyHoster onlyMarketplaceOwner {
+        require(s_raffleState == RaffleLibrary.RaffleState.OPEN, "Raffle: not open");
+
+        // WARNING: O(m) transfers. For m=1000 could be heavy; consider batching.
+        for (uint256 i = 0; i < tokensInRaffle.length; i++) {
+            uint256 tokenId = tokensInRaffle[i].id;
+            address payable ownerOfTicket = payable(RaffleNFT(raffleNFT).ownerOf(tokenId));
+            ownerOfTicket.transfer(tokensInRaffle[i].ticketPrice);
+        }
+
         s_raffleState = RaffleLibrary.RaffleState.REVERTED;
         raffleMarketplace.updateRaffleState(raffleId, s_raffleState);
     }
 
     function distributePrizes() public onlyMarketplaceOwner {
-        if (s_raffleState != RaffleLibrary.RaffleState.FINISHED) {
-            revert Raffle__RaffleNotFinished();
-        }
+        if (s_raffleState != RaffleLibrary.RaffleState.FINISHED) revert Raffle__RaffleNotFinished();
+
         uint256 count = 0;
         for (uint256 i = 0; i < prizes.length; i++) {
             if (prizes[i].prizeAmount != 0 && count < s_recentWinners.length) {
-                (bool sent, ) = payable(s_recentWinners[count]).call{value: prizes[i].prizeAmount}(
-                    ""
-                );
+                (bool sent, ) = payable(s_recentWinners[count]).call{value: prizes[i].prizeAmount}("");
                 count++;
-                require(sent);
+                require(sent, "Raffle: prize transfer failed");
             }
         }
     }
 
+    function _sendFundsToMarketplace() external onlyMarketplaceOwner {
+        (bool sent, ) = address(raffleMarketplace).call{value: address(this).balance}("");
+        require(sent, "Raffle: send failed");
+    }
+
+    // ---------------------------------------------------------------------
+    // Storage helpers
+    // ---------------------------------------------------------------------
+
     function _addStageInStorage(RaffleLibrary.RaffleStage[] memory _stages) internal {
+        require(_stages.length > 0, "Raffle: no stages");
         for (uint256 i = 0; i < _stages.length; i++) {
-            raffleStages[uint256(_stages[i].stageType)] = (
-                RaffleLibrary.RaffleStage(
-                    _stages[i].stageType,
-                    _stages[i].ticketsAvailable,
-                    _stages[i].ticketPrice,
-                    0
-                )
+            raffleStages[uint256(_stages[i].stageType)] = RaffleLibrary.RaffleStage(
+                _stages[i].stageType,
+                _stages[i].ticketsAvailable,
+                _stages[i].ticketPrice,
+                0
             );
 
             raffleStagesArray.push(
@@ -325,7 +389,6 @@ contract RaffleContract is VRFConsumerBaseV2, KeeperCompatibleInterface {
                 )
             );
         }
-
         currentStage = uint256(_stages[0].stageType);
     }
 
@@ -333,7 +396,6 @@ contract RaffleContract is VRFConsumerBaseV2, KeeperCompatibleInterface {
         for (uint256 i = 0; i < _prizes.length; i++) {
             prizes.push(
                 RaffleLibrary.RafflePrize(
-
                     _prizes[i].prizeTitle,
                     _prizes[i].country,
                     _prizes[i].prizeAmount
@@ -342,14 +404,9 @@ contract RaffleContract is VRFConsumerBaseV2, KeeperCompatibleInterface {
         }
     }
 
-    function _sendFundsToMarketplace() external onlyMarketplaceOwner {
-        (bool sent, ) = address(raffleMarketplace).call{value: address(this).balance}("");
-        require(sent);
-    }
-
-    function getRaffleId() public view returns (uint256) {
-        return raffleId;
-    }
+    // ---------------------------------------------------------------------
+    // Views
+    // ---------------------------------------------------------------------
 
     function getEntraceFee() external view returns (uint256) {
         return raffleStages[currentStage].ticketPrice;
@@ -359,7 +416,7 @@ contract RaffleContract is VRFConsumerBaseV2, KeeperCompatibleInterface {
         return tokensInRaffle.length;
     }
 
-    function getRecentWinners() external view returns (address[] memory) {
+    function getRecentWinners() external view returns (address payable[] memory) {
         return s_recentWinners;
     }
 
@@ -371,11 +428,7 @@ contract RaffleContract is VRFConsumerBaseV2, KeeperCompatibleInterface {
         return raffleStagesArray;
     }
 
-    function getStageInformation(uint256 stageType)
-        external
-        view
-        returns (RaffleLibrary.RaffleStage memory)
-    {
+    function getStageInformation(uint256 stageType) external view returns (RaffleLibrary.RaffleStage memory) {
         return raffleStages[stageType];
     }
 
@@ -399,58 +452,46 @@ contract RaffleContract is VRFConsumerBaseV2, KeeperCompatibleInterface {
         return count;
     }
 
-    function ticketsSoldByStage(uint256 stageType) external view returns (uint256) {
-        return raffleStages[stageType].ticketsSold;
-    }
-
     function getCurrentThresholdValue() public view returns (uint256) {
         return (totalTicketsSold() * 100) / totalTickets();
     }
 
     function isThresholdPassed() public view returns (bool) {
-        bool isThreshold = (getCurrentThresholdValue() >= threshold);
-        return isThreshold;
+        return (getCurrentThresholdValue() >= threshold);
     }
 
     function getBalance() external view returns (uint256) {
         return address(this).balance;
     }
 
-    function NftAddress() public view returns (address) {
-        return RaffleNFt;
+    function getSeed() external view returns (bytes32) {
+        return s_seed;
     }
 
+    // ---------------------------------------------------------------------
+    // Modifiers
+    // ---------------------------------------------------------------------
+
     modifier isRaffleOpen() {
-        if (s_raffleState != RaffleLibrary.RaffleState.OPEN) {
-            revert Raffle__NotOpen();
-        }
+        if (s_raffleState != RaffleLibrary.RaffleState.OPEN) revert Raffle__NotOpen();
         _;
     }
 
     modifier onlyHoster() {
-        _onlyHoster();
+        if (msg.sender != raffleOwner) revert Raffle__OnlyHosterAllowed();
         _;
-    }
-
-    function _onlyHoster() internal view {
-        if (msg.sender != raffleOwner) {
-            revert Raffle__OnlyHosterAllowed();
-        }
     }
 
     modifier onlyMarketplaceOwner() {
-        _onlyMarketplaceOwner();
+        if (msg.sender != marketplaceOwner) revert Raffle__OnlyMarketplaceOwnerAllowed();
         _;
     }
 
-    function _onlyMarketplaceOwner() internal view {
-        if (msg.sender != marketplaceOwner) {
-            revert Raffle__OnlyMarketplaceOwnerAllowed();
-        }
-    }
-
+    /// @dev Marketplace OR trusted automation contract
     modifier onlyMarketplace() {
-        require(msg.sender == marketplace, "No access");
+        if (msg.sender != marketplace && msg.sender != automation) {
+            revert Raffle__OnlyMarketplaceOrAutomation();
+        }
         _;
     }
 }

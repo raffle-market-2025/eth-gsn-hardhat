@@ -1,9 +1,3 @@
-// What we need to do
-/* Users can enter the lottery
-   We pick a random winner from the entered players
-   @todo Winner to be selected within X minutes -> should be completely automated
-*/
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
@@ -13,191 +7,189 @@ import "./RaffleNFT.sol";
 error Raffle__TransferFailed();
 error Raffle__NotOpen();
 error Raffle__ManyTicketsOnWallet();
-error Raffle__upkeepNotNeeded(uint256 currentBalance, uint256 noPlayers, uint256 RaffleState);
+error Raffle__upkeepNotNeeded(uint256 currentBalance, uint256 noPlayers, uint256 raffleState);
+error Raffle__NftNotSet();
+error Raffle__NftAlreadySet();
+error Raffle__NotOwner();
+error Raffle__OwnerZero();
 
-/** @title A PromoRaffle Contract
-    @author 2024-Aman, 2025-Tarasenko
-    @notice This contact is for creating an untamperable decentralized lottery 
-    @dev this contract implements GSN
- */
 contract PromoRaffle is ERC2771Recipient {
-    enum RaffleState {
-        OPEN,
-        CALCULATING
-    }
+    enum RaffleState { OPEN, CALCULATING }
+
     RaffleState private s_raffleState;
 
-    address payable[] private s_players;
-    uint[] private tokensInRaffle;
+    // store only tokenIds (owners can be read via ownerOf on demand)
+    uint256[] private tokensInRaffle;
 
-    uint public playersNeeded;
+    uint256 public playersNeeded;
     address private s_recentWinner;
     uint256 private s_lastTimestamp;
     uint256 private s_cycles;
     address public owner;
 
-    address promoNft = address(0);
-    address promoNftSender = address(0);
+    address public promoNft;        // set-once
+    address public promoNftSender;  // set-once (kept for your flow / deployer bookkeeping)
 
-    
-    event RaffleEnter( address indexed _player, string _ip, bytes3 _country3, uint256 _lastTimestamp);
-    event WinnerPicked( uint256 cycle, address payable[] players, address indexed winner);
-    event RaffleFundsReceived( address indexed from, uint256 amount);
-    event RafflePrizePaid( address indexed winner, uint256 amount);
+    event RaffleEnter(address indexed _player, string _ip, bytes3 _country3, uint256 _lastTimestamp);
+    event WinnerPicked(uint256 cycle, address indexed winner);
+    event RaffleFundsReceived(address indexed from, uint256 amount);
+    event RafflePrizePaid(address indexed winner, uint256 amount);
 
-
-    constructor(
-        uint _playersNeeded,
-        address _forwarder,
-        address _deployer
-    ) payable {
+    constructor(uint256 _playersNeeded, address _forwarder, address _deployer) payable {
         owner = _msgSender();
         s_raffleState = RaffleState.OPEN;
         s_lastTimestamp = block.timestamp;
         playersNeeded = _playersNeeded;
-        s_cycles ++;
+        s_cycles = 1;
 
         _setTrustedForwarder(_forwarder);
-        setPromoNftSender(_deployer);
+
+        // keep your “promoNftSender set once” behavior
+        if (_deployer != address(0)) promoNftSender = _deployer;
     }
 
     receive() external payable {
         emit RaffleFundsReceived(msg.sender, msg.value);
     }
 
-    function getBalance() external view returns (uint256) {
-        return address(this).balance;
-    }
+    /* =========================  Public entry  ========================= */
 
-    function enterRaffle(string calldata _ip, bytes3 _country3) public  {       
-        if (s_raffleState != RaffleState.OPEN) { revert Raffle__NotOpen(); }
+    function enterRaffle(string calldata _ip, bytes3 _country3) external {
+        if (s_raffleState != RaffleState.OPEN) revert Raffle__NotOpen();
+        address nft = promoNft;
+        if (nft == address(0)) revert Raffle__NftNotSet();
 
-        uint tokenCount = RaffleNFT(promoNft).balanceOf(_msgSender());
-        if(tokenCount > 0) { revert Raffle__ManyTicketsOnWallet(); }
+        address sender = _msgSender();
 
-        (bool transferred, uint mintedTokenId) = RaffleNFT(promoNft).mintNFTs(_msgSender());        
-        require(transferred, "Can't transfer");
+        // one ticket per wallet
+        if (RaffleNFT(nft).balanceOf(sender) > 0) revert Raffle__ManyTicketsOnWallet();
 
-        //s_players.push(payable(_msgSender()));
+        (, uint256 mintedTokenId) = RaffleNFT(nft).mintNFTs(sender);
         tokensInRaffle.push(mintedTokenId);
 
-        // Whenever we update a dynamic object like array or mapping, we should emit events
-        emit RaffleEnter(_msgSender(), _ip, _country3, s_lastTimestamp);
+        emit RaffleEnter(sender, _ip, _country3, s_lastTimestamp);
 
         if (tokensInRaffle.length >= playersNeeded) {
             _runRaffle();
         }
     }
 
-    function checkSet() public view returns (bool upkeepNeeded)
-    {
-        bool isOpen = (RaffleState.OPEN == s_raffleState);
-        bool hasPlayers = (tokensInRaffle.length >= playersNeeded);
-        bool hasBalance = address(this).balance > 0;
-        upkeepNeeded = (isOpen && hasPlayers && hasBalance);
-    }
-
-    // External func are cheaper this func is automatically called by chainlink no
     function runRaffle() external onlyOwner {
         _runRaffle();
     }
 
+    function checkSet() public view returns (bool upkeepNeeded) {
+        upkeepNeeded =
+            (s_raffleState == RaffleState.OPEN) &&
+            (promoNft != address(0)) &&
+            (tokensInRaffle.length >= playersNeeded) &&
+            (address(this).balance > 0);
+    }
+
+    /* =========================  Internal draw  ========================= */
+
     function _runRaffle() internal {
-        bool upkeepNeeded = checkSet();
-        if (!upkeepNeeded) {
+        if (!checkSet()) {
             revert Raffle__upkeepNotNeeded(address(this).balance, tokensInRaffle.length, uint256(s_raffleState));
         }
 
         s_raffleState = RaffleState.CALCULATING;
 
-        for(uint i = 0; i < tokensInRaffle.length; i++) {            
-            s_players.push( payable(RaffleNFT(promoNft).ownerOf(tokensInRaffle[i])));
-        }
+        uint256 len = tokensInRaffle.length;
 
-        // Generate pseudo-random number using blockhash and timestamp, in range [0, s_players.length]
-        uint256 indexOfWinner = uint256(
-                keccak256(abi.encodePacked(block.prevrandao, block.timestamp, blockhash(block.number - 1)))
-            ) % s_players.length;
+        // pseudo-random winner index (same approach as before)
+        uint256 indexOfWinner =
+            uint256(keccak256(abi.encodePacked(block.prevrandao, block.timestamp, blockhash(block.number - 1))))
+                % len;
 
-        address payable recentWinner = s_players[indexOfWinner];
-        s_recentWinner = recentWinner;
-        emit WinnerPicked(s_cycles, s_players, recentWinner);
+        // derive winner from winning tokenId
+        uint256 winTokenId = tokensInRaffle[indexOfWinner];
+        address winner = RaffleNFT(promoNft).ownerOf(winTokenId);
 
-        s_cycles ++;
+        s_recentWinner = winner;
+        emit WinnerPicked(s_cycles, winner);
+
+        unchecked { ++s_cycles; }
         s_lastTimestamp = block.timestamp;
 
-        // transfer raffle balance onto recentWinner
-        uint256 _balance = address(this).balance;
-        (bool success, ) = recentWinner.call{value: _balance}("");
-        if (!success) { revert Raffle__TransferFailed(); }
-        emit RafflePrizePaid(recentWinner, _balance);
+        uint256 amount = address(this).balance;
+        (bool success, ) = payable(winner).call{value: amount}("");
+        if (!success) revert Raffle__TransferFailed();
+        emit RafflePrizePaid(winner, amount);
 
-        RaffleNFT(promoNft).burnAll();
+        // burn exactly minted tickets (no scan, no owner-only nft function)
+        RaffleNFT(promoNft).burnBatch(tokensInRaffle);
 
-        while(s_players.length > 0) {
-            s_players.pop();
-            tokensInRaffle.pop();
-        }
-
+        // reset for next cycle
+        delete tokensInRaffle;
         s_raffleState = RaffleState.OPEN;
     }
 
-    function getTokensIds() public view returns (uint[] memory) {
-        return tokensInRaffle;
-    }
+    /* =========================  Admin / set-once  ========================= */
 
-    function getRecentWinner() public view returns (address) {
-        return s_recentWinner;
-    }
-
-    function getRaffleState() public view returns (RaffleState) {
-        return s_raffleState;
-    }
-
-    function getNumberOfPlayersEntered() public view returns (uint256) {
-        return tokensInRaffle.length;
-    }
-
-    function getLatestTimestamp() public view returns (uint256) {
-        return s_lastTimestamp;
-    }
-
-    function getNumberOfPlayers() public view returns (uint256) {
-        return playersNeeded;
-    }
-
-    function updatePlayersNeeded(uint _playersNeeded) public onlyOwner {
+    function updatePlayersNeeded(uint256 _playersNeeded) external onlyOwner {
         playersNeeded = _playersNeeded;
     }
 
-    // only-once promoNft setter
-    function setPromoNftAddress(address _promoNft) public onlyOwner {
-        if (_promoNft != address(0) && promoNft == address(0)) {
-            promoNft = _promoNft;
-        }   
+    function setPromoNftAddress(address _promoNft) external onlyOwner {
+        if (_promoNft == address(0)) revert Raffle__NftNotSet();
+        if (promoNft != address(0)) revert Raffle__NftAlreadySet();
+        promoNft = _promoNft;
     }
 
-    function getPromoNftAddress() public view returns (address) {
-        return promoNft;
-    }
-
-    // only-once promoNftSender setter
-    function setPromoNftSender(address _promoNftSender) public onlyOwner {
+    function setPromoNftSender(address _promoNftSender) external onlyOwner {
         if (_promoNftSender != address(0) && promoNftSender == address(0)) {
             promoNftSender = _promoNftSender;
         }
     }
 
-    function getPromoNftSender() public view returns (address) {
-        return promoNftSender;
-    }
-
-    function updateOwner(address _owner) external onlyOwner{
+    function updateOwner(address _owner) external onlyOwner {
+        if (_owner == address(0)) revert Raffle__OwnerZero();
         owner = _owner;
     }
 
+    /* =========================  Views (kept “часть getters”)  ========================= */
+
+    function getBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
+
+    function getTokensIds() external view returns (uint256[] memory) {
+        return tokensInRaffle;
+    }
+
+    function getRecentWinner() external view returns (address) {
+        return s_recentWinner;
+    }
+
+    function getRaffleState() external view returns (RaffleState) {
+        return s_raffleState;
+    }
+
+    function getNumberOfPlayersEntered() external view returns (uint256) {
+        return tokensInRaffle.length;
+    }
+
+    function getLatestTimestamp() external view returns (uint256) {
+        return s_lastTimestamp;
+    }
+
+    function getNumberOfPlayers() external view returns (uint256) {
+        return playersNeeded;
+    }
+
+    function getPromoNftAddress() external view returns (address) {
+        return promoNft;
+    }
+
+    function getPromoNftSender() external view returns (address) {
+        return promoNftSender;
+    }
+
+    /* =========================  Modifier  ========================= */
+
     modifier onlyOwner() {
-        require(_msgSender()==owner,"Only Owner is allowed");
+        if (_msgSender() != owner) revert Raffle__NotOwner();
         _;
     }
 }
