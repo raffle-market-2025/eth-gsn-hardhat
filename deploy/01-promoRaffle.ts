@@ -41,8 +41,12 @@ async function main() {
   await verifyWithRetries(addressPromoRaffle, args);
 
   const FactoryNFT = await ethers.getContractFactory("RaffleNFT", deployer);
-  const baseTokenURI: string = "ipfs://bafybeidh6xhjihvmkha6yuxyjol7ubccdmvx6i3m6vdc6pawkykjlcx2ju/promo.json";
-  const argsNFT: [string, string] = [baseTokenURI, await promoRaffle.getAddress()];
+  const argsNFT: [string, string, string, string] = [
+    "ipfs://bafybeidh6xhjihvmkha6yuxyjol7ubccdmvx6i3m6vdc6pawkykjlcx2ju/promo.json",
+    await promoRaffle.getAddress(),
+    "Raffle NFT",
+    "Lucky",
+  ];
   console.log("Deploying RaffleNFT with args:", argsNFT);
 
   const promoNFT = await FactoryNFT.deploy(...argsNFT);
