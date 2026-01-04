@@ -1,0 +1,10 @@
+{
+  "ethereumNodeUrl": "https://sepolia.infura.io/v3/c53f023f8f7848b48a452cfaaa1d3718",
+  "relayHubAddress": "0x9a0FE42F9704544Abb7E0B44E2226B7Fba51243A",
+  "managerStakeTokenAddress": "0xEE0c7864Fb8C9ecb84BDe410c57BDD0362d70dd7",
+  "ownerAddress": "0x15e30a95a101f0Cc604e99627b9308C8C7992B4F",
+  "gasPriceFactor": 1,
+
+  "url": "http://127.0.0.1:8090",
+  "workdir": "/app/data"
+}

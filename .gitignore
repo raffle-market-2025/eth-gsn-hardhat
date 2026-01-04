@@ -19,4 +19,5 @@
 # Hardhat coverage reports
 /coverage
 
-/build/gsn
+/build
+/gsndata

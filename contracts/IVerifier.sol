@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import "./LibraryStruct.sol";
 
-interface IVerifier{
+interface IVerifier {
     struct toPassFunc {
         uint256 _raffleId;
         uint256 _durationOfRaffle;
@@ -12,10 +12,9 @@ interface IVerifier{
         address _marketplceOwner;
         RaffleLibrary.RafflePrize[] _prizes;
         RaffleLibrary.RaffleStage[] _stages;
-        address vrfCoordinatorV2;
-        uint64 subscriptionId;
     }
+
     function deployRaffle(
         toPassFunc memory data
-    ) external returns(address raffle);
+    ) external returns (address raffle);
 }

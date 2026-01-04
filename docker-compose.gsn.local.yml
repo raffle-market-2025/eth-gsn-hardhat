@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  jsrelay:
+    image: opengsn/jsrelay:3.0.0-beta.3
+    container_name: gsn-jsrelay
+    restart: unless-stopped
+
+    # наружу отдаём relay server на localhost:8090
+    ports:
+      - "8090:8090"
+
+    volumes:
+      - ./config:/app/config:ro
+      - ./gsndata:/app/data:rw
+
+    environment:
+      # эти env-поля используются в официальном compose
+      config: /app/config/gsn-relay-config.json
+      workdir: /app/data
+      url: http://127.0.0.1:8090
+      port: 8090
+
+    # опционально
+    mem_limit: 256m
