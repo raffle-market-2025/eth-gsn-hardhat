@@ -1,74 +1,76 @@
+import { Bytes, ethereum } from "@graphprotocol/graph-ts";
+
 import {
   RaffleEnter as RaffleEnterEvent,
+  WinnerPicked as WinnerPickedEvent,
   RaffleFundsReceived as RaffleFundsReceivedEvent,
   RafflePrizePaid as RafflePrizePaidEvent,
-  WinnerPicked as WinnerPickedEvent
-} from "../generated/PromoRaffle/PromoRaffle"
+} from "../generated/PromoRaffle/PromoRaffle";
+
 import {
   RaffleEnter,
+  WinnerPicked,
   RaffleFundsReceived,
   RafflePrizePaid,
-  WinnerPicked
-} from "../generated/schema"
-import { Bytes } from "@graphprotocol/graph-ts"
+} from "../generated/schema";
+
+function idOf(event: ethereum.Event): Bytes {
+  // Unique per log: tx hash + log index
+  return event.transaction.hash.concatI32(event.logIndex.toI32());
+}
 
 export function handleRaffleEnter(event: RaffleEnterEvent): void {
-  let entity = new RaffleEnter(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity._player = event.params._player
-  entity._ip = event.params._ip
-  entity._country3 = event.params._country3
-  entity._lastTimestamp = event.params._lastTimestamp
+  const e = new RaffleEnter(idOf(event));
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+  e._player = event.params._player;
+  e._ipHash = event.params._ipHash;       // bytes32 -> Bytes
+  e._country3 = event.params._country3;   // bytes3  -> Bytes
+  e._lastTimestamp = event.params._lastTimestamp;
+  e.cycle = event.params.cycle;
 
-  entity.save()
-}
+  e.blockNumber = event.block.number;
+  e.blockTimestamp = event.block.timestamp;
+  e.transactionHash = event.transaction.hash;
 
-export function handleRaffleFundsReceived(
-  event: RaffleFundsReceivedEvent
-): void {
-  let entity = new RaffleFundsReceived(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.from = event.params.from
-  entity.amount = event.params.amount
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleRafflePrizePaid(event: RafflePrizePaidEvent): void {
-  let entity = new RafflePrizePaid(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.winner = event.params.winner
-  entity.amount = event.params.amount
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+  e.save();
 }
 
 export function handleWinnerPicked(event: WinnerPickedEvent): void {
-  let entity = new WinnerPicked(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.cycle = event.params.cycle
-  entity.players = changetype<Bytes[]>(event.params.players)
-  entity.winner = event.params.winner
+  const e = new WinnerPicked(idOf(event));
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+  e.cycle = event.params.cycle;
+  e.playersBeforePick = event.params.playersBeforePick;
+  e.winner = event.params.winner;
 
-  entity.save()
+  e.blockNumber = event.block.number;
+  e.blockTimestamp = event.block.timestamp;
+  e.transactionHash = event.transaction.hash;
+
+  e.save();
+}
+
+export function handleRaffleFundsReceived(event: RaffleFundsReceivedEvent): void {
+  const e = new RaffleFundsReceived(idOf(event));
+
+  e.from = event.params.from;
+  e.amount = event.params.amount;
+
+  e.blockNumber = event.block.number;
+  e.blockTimestamp = event.block.timestamp;
+  e.transactionHash = event.transaction.hash;
+
+  e.save();
+}
+
+export function handleRafflePrizePaid(event: RafflePrizePaidEvent): void {
+  const e = new RafflePrizePaid(idOf(event));
+
+  e.winner = event.params.winner;
+  e.amount = event.params.amount;
+
+  e.blockNumber = event.block.number;
+  e.blockTimestamp = event.block.timestamp;
+  e.transactionHash = event.transaction.hash;
+
+  e.save();
 }

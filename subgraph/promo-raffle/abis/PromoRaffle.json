@@ -1,295 +1,211 @@
 [
   {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "_playersNeeded",
-        "type": "uint256"
-      },
-      { "internalType": "address", "name": "_forwarder", "type": "address" },
-      { "internalType": "address", "name": "_deployer", "type": "address" }
-    ],
+    "type": "constructor",
     "stateMutability": "payable",
-    "type": "constructor"
-  },
-  { "inputs": [], "name": "Raffle__ManyTicketsOnWallet", "type": "error" },
-  { "inputs": [], "name": "Raffle__NotOpen", "type": "error" },
-  { "inputs": [], "name": "Raffle__TransferFailed", "type": "error" },
-  {
     "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "currentBalance",
-        "type": "uint256"
-      },
-      { "internalType": "uint256", "name": "noPlayers", "type": "uint256" },
-      { "internalType": "uint256", "name": "RaffleState", "type": "uint256" }
-    ],
-    "name": "Raffle__upkeepNotNeeded",
-    "type": "error"
+      { "name": "_playersNeeded", "type": "uint256" },
+      { "name": "_forwarder", "type": "address" },
+      { "name": "_deployer", "type": "address" }
+    ]
   },
   {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "_player",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "_ip",
-        "type": "string"
-      },
-      {
-        "indexed": false,
-        "internalType": "bytes3",
-        "name": "_country3",
-        "type": "bytes3"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "_lastTimestamp",
-        "type": "uint256"
-      }
-    ],
+    "type": "receive",
+    "stateMutability": "payable"
+  },
+
+  {
+    "type": "event",
     "name": "RaffleEnter",
-    "type": "event"
-  },
-  {
     "anonymous": false,
     "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "from",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "RaffleFundsReceived",
-    "type": "event"
+      { "indexed": true,  "name": "_player",        "type": "address" },
+      { "indexed": false, "name": "_ipHash",        "type": "bytes32" },
+      { "indexed": false, "name": "_country3",      "type": "bytes3" },
+      { "indexed": false, "name": "_lastTimestamp", "type": "uint256" },
+      { "indexed": false, "name": "cycle",          "type": "uint256" }
+    ]
   },
   {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "winner",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "RafflePrizePaid",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "cycle",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "address payable[]",
-        "name": "players",
-        "type": "address[]"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "winner",
-        "type": "address"
-      }
-    ],
+    "type": "event",
     "name": "WinnerPicked",
-    "type": "event"
-  },
-  {
-    "inputs": [],
-    "name": "checkSet",
-    "outputs": [
-      { "internalType": "bool", "name": "upkeepNeeded", "type": "bool" }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
+    "anonymous": false,
     "inputs": [
-      { "internalType": "string", "name": "_ip", "type": "string" },
-      { "internalType": "bytes3", "name": "_country3", "type": "bytes3" }
-    ],
-    "name": "enterRaffle",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
+      { "indexed": false, "name": "cycle",             "type": "uint256" },
+      { "indexed": false, "name": "playersBeforePick", "type": "uint256" },
+      { "indexed": true,  "name": "winner",            "type": "address" }
+    ]
   },
   {
-    "inputs": [],
+    "type": "event",
+    "name": "RaffleFundsReceived",
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true,  "name": "from",   "type": "address" },
+      { "indexed": false, "name": "amount", "type": "uint256" }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "RafflePrizePaid",
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true,  "name": "winner", "type": "address" },
+      { "indexed": false, "name": "amount", "type": "uint256" }
+    ]
+  },
+
+  {
+    "type": "function",
     "name": "getBalance",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [],
-    "name": "getLatestTimestamp",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
+    "outputs": [{ "name": "", "type": "uint256" }]
   },
   {
-    "inputs": [],
-    "name": "getNumberOfPlayers",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getNumberOfPlayersEntered",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getPromoNftAddress",
-    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getPromoNftSender",
-    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getRaffleState",
-    "outputs": [
-      {
-        "internalType": "enum PromoRaffle.RaffleState",
-        "name": "",
-        "type": "uint8"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getRecentWinner",
-    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getTokensIds",
-    "outputs": [
-      { "internalType": "uint256[]", "name": "", "type": "uint256[]" }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getTrustedForwarder",
-    "outputs": [
-      { "internalType": "address", "name": "forwarder", "type": "address" }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
+    "type": "function",
+    "name": "enterRaffle",
+    "stateMutability": "nonpayable",
     "inputs": [
-      { "internalType": "address", "name": "forwarder", "type": "address" }
+      { "name": "ipHash",   "type": "bytes32" },
+      { "name": "country3", "type": "bytes3" }
     ],
-    "name": "isTrustedForwarder",
-    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
-    "stateMutability": "view",
-    "type": "function"
+    "outputs": []
   },
   {
-    "inputs": [],
-    "name": "owner",
-    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "type": "function",
+    "name": "checkSet",
     "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [{ "name": "upkeepNeeded", "type": "bool" }]
   },
   {
-    "inputs": [],
-    "name": "playersNeeded",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
+    "type": "function",
     "name": "runRaffle",
-    "outputs": [],
     "stateMutability": "nonpayable",
-    "type": "function"
+    "inputs": [],
+    "outputs": []
+  },
+
+  {
+    "type": "function",
+    "name": "getTokensIds",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint256[]" }]
   },
   {
-    "inputs": [
-      { "internalType": "address", "name": "_promoNft", "type": "address" }
-    ],
-    "name": "setPromoNftAddress",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
+    "type": "function",
+    "name": "getRecentWinner",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address" }]
   },
   {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "_promoNftSender",
-        "type": "address"
-      }
-    ],
-    "name": "setPromoNftSender",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
+    "type": "function",
+    "name": "getRaffleState",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint8" }]
   },
   {
-    "inputs": [
-      { "internalType": "address", "name": "_owner", "type": "address" }
-    ],
-    "name": "updateOwner",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
+    "type": "function",
+    "name": "getNumberOfPlayersEntered",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint256" }]
   },
   {
-    "inputs": [
-      { "internalType": "uint256", "name": "_playersNeeded", "type": "uint256" }
-    ],
+    "type": "function",
+    "name": "getLatestTimestamp",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint256" }]
+  },
+  {
+    "type": "function",
+    "name": "getNumberOfPlayers",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint256" }]
+  },
+
+  {
+    "type": "function",
+    "name": "playersNeeded",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint256" }]
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "promoNft",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "promoNftSender",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address" }]
+  },
+
+  {
+    "type": "function",
     "name": "updatePlayersNeeded",
-    "outputs": [],
     "stateMutability": "nonpayable",
-    "type": "function"
+    "inputs": [{ "name": "_playersNeeded", "type": "uint256" }],
+    "outputs": []
   },
-  { "stateMutability": "payable", "type": "receive" }
+  {
+    "type": "function",
+    "name": "setPromoNftAddress",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "_promoNft", "type": "address" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "getPromoNftAddress",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "setPromoNftSender",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "_promoNftSender", "type": "address" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "getPromoNftSender",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "updateOwner",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "_owner", "type": "address" }],
+    "outputs": []
+  },
+
+  {
+    "type": "function",
+    "name": "isTrustedForwarder",
+    "stateMutability": "view",
+    "inputs": [{ "name": "forwarder", "type": "address" }],
+    "outputs": [{ "name": "", "type": "bool" }]
+  }
 ]
