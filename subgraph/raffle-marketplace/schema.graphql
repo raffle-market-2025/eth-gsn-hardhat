@@ -1,0 +1,80 @@
+type AutomationSet @entity(immutable: true) {
+  id: Bytes!
+  automation: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type RaffleCreated @entity(immutable: true) {
+  id: Bytes!
+  raffleId: BigInt! # uint256
+  raffleAddress: Bytes! # address
+  raffleOwner: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type RaffleNftCloned @entity(immutable: true) {
+  id: Bytes!
+  raffleId: BigInt! # uint256
+  raffleNFT: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type RaffleNftImplementationSet @entity(immutable: true) {
+  id: Bytes!
+  nftImplementation: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type RaffleStageUpdated @entity(immutable: true) {
+  id: Bytes!
+  raffleId: BigInt! # uint256
+  stage: Int! # uint8
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type RaffleStateUpdated @entity(immutable: true) {
+  id: Bytes!
+  raffleId: BigInt! # uint256
+  state: Int! # uint8
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type TicketsSoldUpdated @entity(immutable: true) {
+  id: Bytes!
+  raffleId: BigInt! # uint256
+  stage: Int! # uint8
+  amount: BigInt! # uint256
+  buyer: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type VerifierSet @entity(immutable: true) {
+  id: Bytes!
+  verifier: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type WinnersUpdated @entity(immutable: true) {
+  id: Bytes!
+  raffleId: BigInt! # uint256
+  winnersCount: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}

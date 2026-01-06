@@ -1,0 +1,50 @@
+specVersion: 1.3.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: RaffleMarketplace
+    network: sepolia
+    source:
+      address: "0xA0A9Cec536B98bbd526ADd7938D9D707Cc83E3e5"
+      abi: RaffleMarketplace
+      startBlock: 9987354
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - AutomationSet
+        - RaffleCreated
+        - RaffleNftCloned
+        - RaffleNftImplementationSet
+        - RaffleStageUpdated
+        - RaffleStateUpdated
+        - TicketsSoldUpdated
+        - VerifierSet
+        - WinnersUpdated
+      abis:
+        - name: RaffleMarketplace
+          file: ./abis/RaffleMarketplace.json
+      eventHandlers:
+        - event: AutomationSet(indexed address)
+          handler: handleAutomationSet
+        - event: RaffleCreated(indexed uint256,indexed address,indexed address)
+          handler: handleRaffleCreated
+        - event: RaffleNftCloned(indexed uint256,indexed address)
+          handler: handleRaffleNftCloned
+        - event: RaffleNftImplementationSet(indexed address)
+          handler: handleRaffleNftImplementationSet
+        - event: RaffleStageUpdated(indexed uint256,uint8)
+          handler: handleRaffleStageUpdated
+        - event: RaffleStateUpdated(indexed uint256,uint8)
+          handler: handleRaffleStateUpdated
+        - event: TicketsSoldUpdated(indexed uint256,uint8,uint256,indexed address)
+          handler: handleTicketsSoldUpdated
+        - event: VerifierSet(indexed address)
+          handler: handleVerifierSet
+        - event: WinnersUpdated(indexed uint256,uint256)
+          handler: handleWinnersUpdated
+      file: ./src/raffle-marketplace.ts

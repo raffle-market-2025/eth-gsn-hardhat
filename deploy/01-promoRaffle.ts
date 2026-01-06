@@ -1,133 +1,166 @@
 import { network } from "hardhat";
-import fs from "node:fs";
-import path from "node:path";
 
 import forwarderJson from "../build/gsn/Forwarder.json";
+import writeAddressJson from "../utils/writeAddressJson.js";
 import verifyWithRetries from "../utils/verifyWithRetries.js";
 
-function writeAddressJson(relPath: string, address: string) {
-  const abs = path.join(process.cwd(), relPath);
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
+// Deploy logic:
+// 1) Deploy PromoRaffle(playersNeeded, trustedForwarder, deployer)
+// 2) Deploy RaffleNFT()  (NEW clone-friendly version: empty constructor)
+// 3) promoNFT.initialize(promoRaffleAddress, baseURI)   <-- REQUIRED
+// 4) promoRaffle.setPromoNftAddress(promoNFTAddress)
+//
+// Frontend sends tx via GSN RelayProvider with paymasterAddress = PromoRafflePaymaster.
 
-  let existing: any = {};
-  if (fs.existsSync(abs)) {
-    try {
-      existing = JSON.parse(fs.readFileSync(abs, "utf8"));
-      if (existing == null || typeof existing !== "object") existing = {};
-    } catch {
-      existing = {};
-    }
+async function main() {
+  const { ethers } = await network.connect();
+
+  const net = await ethers.provider.getNetwork();
+  const isDev =
+    net.chainId === 31337n ||
+    net.name === "hardhat" ||
+    net.name === "localhost";
+
+  const waitConfirmations = isDev ? 1 : 5;
+
+  const forwarderAddress = (forwarderJson as any).address as string;
+  if (!forwarderAddress || forwarderAddress === ethers.ZeroAddress) {
+    throw new Error("Forwarder address missing in ../build/gsn/Forwarder.json");
   }
 
-  const out = { ...existing, address };
-  fs.writeFileSync(abs, JSON.stringify(out, null, 2) + "\n", "utf8");
-  console.log(`Wrote ${relPath}:`, out);
-}
+  const baseURI =
+    "ipfs://bafybeidh6xhjihvmkha6yuxyjol7ubccdmvx6i3m6vdc6pawkykjlcx2ju/promo.json";
 
-// NFT деплоится этим скриптом/фабрикой, логика такая:
-// Deploy PromoRaffle
-// Deploy RaffleNFT(baseURI, promoRaffleAddress, "Raffle NFT", "Lucky")
-// Call promoRaffle.setPromoNftAddress(raffleNftAddress)
-// @dev фронтенд отправляет транзакции через GSN RelayProvider с paymasterAddress = PromoRafflePaymaster.
-//
-async function main() {
+  const promoFundAmount = ethers.parseEther("0.005"); // 0.005 ETH
+
   const asBytes3 = (s: string) => {
     const b = ethers.toUtf8Bytes(s);
-    if (b.length > 3) throw new Error("country must be exactly 2 or 3 ASCII chars");
-    // Важно: для bytes3 лучше всегда передавать 3 байта; здесь у вас UKR (3) — ок.
-    return ethers.hexlify(b); // "UKR" -> "0x554b52"
+    if (b.length < 2 || b.length > 3) {
+      throw new Error("country3 must be 2 or 3 ASCII chars");
+    }
+    // right-pad to 3 bytes for bytes3
+    const padded = new Uint8Array(3);
+    padded.set(b, 0);
+    return ethers.hexlify(padded); // e.g. "USA" -> 0x555341
   };
 
-  const { ethers } = await network.connect();
-  const forwarderAddress = (forwarderJson as any).address as string;
-  const promoFundAmount = ethers.parseEther("0.005"); // 0.00500 ETH
-
+  console.log("----------------------------------------------------");
   console.log("Start deploy...");
+  console.log(`Network: ${net.name} (chainId=${net.chainId.toString()})`);
 
   const [deployer] = await ethers.getSigners();
-  console.log("Deployer:", await deployer.getAddress());
+  const deployerAddr = await deployer.getAddress();
+  console.log("Deployer:", deployerAddr);
 
-  const Factory = await ethers.getContractFactory("PromoRaffle", deployer);
-  const args: [number, string, string] = [1, forwarderAddress, deployer.address];
-  console.log("Deploying PromoRaffle with args:", args);
+  // ------------------------------------------------------------
+  // 1) Deploy PromoRaffle
+  // ------------------------------------------------------------
+  const FactoryPromo = await ethers.getContractFactory("PromoRaffle", deployer);
 
-  const promoRaffle = await (Factory as any).deploy(...args, {
+  const promoArgs: [bigint, string, string] = [1n, forwarderAddress, deployerAddr];
+  console.log("Deploying PromoRaffle with args:", promoArgs);
+  console.log("Initial funding (value):", promoFundAmount.toString(), "wei");
+
+  const promoRaffle = await FactoryPromo.deploy(...promoArgs, {
     value: promoFundAmount,
   });
 
-  const deployTx = promoRaffle.deploymentTransaction();
-  console.log("Deploy promoRaffle tx hash:", deployTx?.hash);
-
-  if (deployTx) await deployTx.wait(5);
-
+  console.log("PromoRaffle tx hash:", promoRaffle.deploymentTransaction()?.hash);
   await promoRaffle.waitForDeployment();
+
   const addressPromoRaffle = await promoRaffle.getAddress();
   console.log("PromoRaffle deployed at:", addressPromoRaffle);
 
-  // ✅ записываем адрес в ./build/raffle/PromoRaffle.json
   writeAddressJson("build/raffle/PromoRaffle.json", addressPromoRaffle);
 
-  await verifyWithRetries(addressPromoRaffle, args);
+  if (!isDev) {
+    await verifyWithRetries(addressPromoRaffle, promoArgs);
+  } else {
+    console.log("Dev chain: skipping Etherscan verification for PromoRaffle.");
+  }
 
+  // ------------------------------------------------------------
+  // 2) Deploy RaffleNFT (NEW: empty constructor)
+  // ------------------------------------------------------------
   const FactoryNFT = await ethers.getContractFactory("RaffleNFT", deployer);
-  const argsNFT: [string, string, string, string] = [
-    "ipfs://bafybeidh6xhjihvmkha6yuxyjol7ubccdmvx6i3m6vdc6pawkykjlcx2ju/promo.json",
-    addressPromoRaffle,
-    "Raffle NFT",
-    "Lucky",
-  ];
-  console.log("Deploying RaffleNFT with args:", argsNFT);
 
-  const promoNFT = await FactoryNFT.deploy(...argsNFT);
-  console.log("Tx hash:", promoNFT.deploymentTransaction()?.hash);
+  console.log("Deploying RaffleNFT (no constructor args)...");
+  const promoNFT = await FactoryNFT.deploy();
 
+  console.log("RaffleNFT tx hash:", promoNFT.deploymentTransaction()?.hash);
   await promoNFT.waitForDeployment();
+
   const addressPromoNFT = await promoNFT.getAddress();
   console.log("PromoNFT deployed at:", addressPromoNFT);
 
-  await verifyWithRetries(addressPromoNFT, argsNFT);
+  // 3) Initialize NFT (REQUIRED for new clone-friendly RaffleNFT)
+  console.log("Initializing PromoNFT...");
+  const initTx = await promoNFT.initialize(addressPromoRaffle, baseURI);
+  console.log("PromoNFT.initialize tx hash:", initTx.hash);
+  await initTx.wait(waitConfirmations);
+  console.log("PromoNFT initialized.");
 
-  // Register the PromoNFT address in the PromoRaffle contract
-  const promoRaffleContract = await ethers.getContractAt("PromoRaffle", addressPromoRaffle);
-  const tx = await promoRaffleContract.setPromoNftAddress(addressPromoNFT);
-  console.log("Setting PromoNFT address in PromoRaffle, tx hash:", tx.hash);
-  await tx.wait();
+  writeAddressJson("build/raffle/PromoNFT.json", addressPromoNFT);
+
+  if (!isDev) {
+    // constructor args are empty for new RaffleNFT
+    await verifyWithRetries(addressPromoNFT, []);
+  } else {
+    console.log("Dev chain: skipping Etherscan verification for PromoNFT.");
+  }
+
+  // ------------------------------------------------------------
+  // 4) Register the PromoNFT address in the PromoRaffle contract
+  // ------------------------------------------------------------
+  console.log("Setting PromoNFT address in PromoRaffle...");
+  const setTx = await promoRaffle.setPromoNftAddress(addressPromoNFT);
+  console.log("PromoRaffle.setPromoNftAddress tx hash:", setTx.hash);
+  await setTx.wait(waitConfirmations);
   console.log("PromoNFT address set in PromoRaffle.");
-
-  // ✅ записываем NFT адрес в ./build/raffle/PromoNFT.json
-  writeAddressJson("build/raffle/PromoNFT.json", await promoNFT.getAddress());
 
   console.log("----- PromoRaffle deployed -----------------------------------------------");
 
-  const balanceWeiBefore = await ethers.provider.getBalance(deployer);
-  console.log(`Deployer balance before test run: ${ethers.formatEther(balanceWeiBefore)} ETH`);
+  // ------------------------------------------------------------
+  // Optional: quick test run (same as your original, but kept working)
+  // ------------------------------------------------------------
+  const balanceWeiBefore = await ethers.provider.getBalance(deployerAddr);
+  console.log(
+    `Deployer balance before test run: ${ethers.formatEther(balanceWeiBefore)} ETH`
+  );
 
   console.log("----- PromoRaffle test run started ---------------------------------------");
 
   const ipHash = ethers.keccak256(ethers.toUtf8Bytes("192.168.0.1"));
-  const enterTx = await promoRaffleContract.enterRaffle(ipHash, asBytes3("USA"));
+  const enterTx = await promoRaffle.enterRaffle(ipHash, asBytes3("USA"));
   console.log("Entering PromoRaffle, tx hash:", enterTx.hash);
-  await enterTx.wait();
+  await enterTx.wait(waitConfirmations);
 
-  const playersEntered: bigint = await promoRaffleContract.getNumberOfPlayersEntered();
-  console.log("Number of players entered into PromoRaffle [ after-run, should be 0 ]:", playersEntered);
+  const playersEntered: bigint = await promoRaffle.getNumberOfPlayersEntered();
+  console.log(
+    "Number of players entered into PromoRaffle [ after-run, should be 0 ]:",
+    playersEntered.toString()
+  );
 
-  const maxPlayers = 100;
-  const txMaxPlayers = await promoRaffleContract.updatePlayersNeeded(maxPlayers);
+  const maxPlayers = 100n;
+  const txMaxPlayers = await promoRaffle.updatePlayersNeeded(maxPlayers);
   console.log("Setting MaxPlayers in PromoRaffle, tx hash:", txMaxPlayers.hash);
-  await txMaxPlayers.wait();
+  await txMaxPlayers.wait(waitConfirmations);
 
-  const readMaxPlayers: bigint = await promoRaffleContract.getNumberOfPlayers();
-  console.log("MaxPlayers in PromoRaffle set to", readMaxPlayers);
+  const readMaxPlayers: bigint = await promoRaffle.getNumberOfPlayers();
+  console.log("MaxPlayers in PromoRaffle set to", readMaxPlayers.toString());
 
   const txFund = await deployer.sendTransaction({
     to: addressPromoRaffle,
     value: promoFundAmount,
   });
-  await txFund.wait();
+  await txFund.wait(waitConfirmations);
 
-  console.log(`PromoRaffle (${addressPromoRaffle}) funded with ${promoFundAmount.toString()} wei`);
-  console.log("----- PromoRaffle configuration complete ------------------------");
+  console.log(
+    `PromoRaffle (${addressPromoRaffle}) funded with ${promoFundAmount.toString()} wei`
+  );
+
+  console.log("----- PromoRaffle configuration complete ---------------------------------");
+  console.log("Done.");
 }
 
 main().catch((e) => {

@@ -24,7 +24,10 @@ contract RMT is ERC20, Ownable, ERC2771Recipient {
     event Preminted(address indexed owner, uint256 tokensOut);
     event Withdrawn(address indexed owner, uint256 amountWei);
 
-    constructor(address trustedForwarder_) ERC20("RMT", "RMT") {
+    constructor(address trustedForwarder_)
+        ERC20("RMT", "RMT")
+        Ownable(_msgSender())
+    {
         _setTrustedForwarder(trustedForwarder_);
     }
 

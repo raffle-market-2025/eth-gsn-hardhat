@@ -52,7 +52,6 @@ interface IVRFV2_5SubscriptionView {
 
 /* ========= Errors ========= */
 
-error AutomVRF__OnlyOwner(); // оставляем имя, но теперь это "admin"
 error AutomVRF__BadConfig();
 error AutomVRF__NoRaffles();
 error AutomVRF__UpkeepNotNeeded();
@@ -65,21 +64,22 @@ error AutomVRF__ZeroValue();
  * - Batch-ready processing with bounded scan + bounded batch size
  * - Optional nativeBalance low-watermark alert (event-only, serverless)
  * - Optional native subscription funding helper (fundSubscriptionNative)
+ *
+ * IMPORTANT:
+ * - Uses owner mechanics from VRFConsumerBaseV2Plus (ConfirmedOwnerWithProposal).
+ *   Do NOT declare `address public owner` here (it would collide with owner()).
  */
 contract RaffleAutomationVRF is
     VRFConsumerBaseV2Plus,
     AutomationCompatibleInterface,
     RaffleRegisterUpkeep
 {
-    /* ========= Admin / Config ========= */
-
-    // PATCH: rename to avoid collision with ConfirmedOwnerWithProposal.owner()
-    address public admin;
+    /* ========= Config ========= */
 
     IRaffleMarketplaceView public marketplace;
 
-    // VRF v2.5
-    IVRFCoordinatorV2Plus public coordinator; // typed coordinator
+    // VRF v2.5 (typed coordinator)
+    IVRFCoordinatorV2Plus public coordinator;
     uint256 public subscriptionId;
     bytes32 public keyHash;
     uint32 public callbackGasLimit;
@@ -141,9 +141,6 @@ contract RaffleAutomationVRF is
         if (_maxBatch == 0) revert AutomVRF__BadConfig();
         if (_maxScan == 0) revert AutomVRF__BadConfig();
 
-        // PATCH
-        admin = msg.sender;
-
         marketplace = IRaffleMarketplaceView(_marketplace);
         coordinator = IVRFCoordinatorV2Plus(_vrfCoordinator);
 
@@ -160,19 +157,9 @@ contract RaffleAutomationVRF is
         emit VRFConfigUpdated(_vrfCoordinator, _subscriptionId, _keyHash, _callbackGasLimit);
     }
 
-    // PATCH: rename modifier to avoid future collisions
-    modifier onlyAdmin() {
-        if (msg.sender != admin) revert AutomVRF__OnlyOwner();
-        _;
-    }
+    /* ========= Admin setters (uses base onlyOwner) ========= */
 
-    /* ========= Admin setters ========= */
-
-    function updateOwner(address newOwner) external onlyAdmin {
-        admin = newOwner;
-    }
-
-    function setMarketplace(address newMarketplace) external onlyAdmin {
+    function setMarketplace(address newMarketplace) external onlyOwner {
         if (newMarketplace == address(0)) revert AutomVRF__BadConfig();
         marketplace = IRaffleMarketplaceView(newMarketplace);
         emit MarketplaceUpdated(newMarketplace);
@@ -183,7 +170,7 @@ contract RaffleAutomationVRF is
         uint256 _subscriptionId,
         bytes32 _keyHash,
         uint32 _callbackGasLimit
-    ) external onlyAdmin {
+    ) external onlyOwner {
         if (_vrfCoordinator == address(0)) revert AutomVRF__BadConfig();
         if (_subscriptionId == 0) revert AutomVRF__BadConfig();
 
@@ -195,17 +182,17 @@ contract RaffleAutomationVRF is
         emit VRFConfigUpdated(_vrfCoordinator, _subscriptionId, _keyHash, _callbackGasLimit);
     }
 
-    function setLowWatermarkWei(uint96 newLowWatermarkWei) external onlyAdmin {
+    function setLowWatermarkWei(uint96 newLowWatermarkWei) external onlyOwner {
         lowWatermarkWei = newLowWatermarkWei;
     }
 
-    function setScanCursor(uint256 newCursor) external onlyAdmin {
+    function setScanCursor(uint256 newCursor) external onlyOwner {
         scanCursor = newCursor;
         emit CursorUpdated(newCursor);
     }
 
     // Rescue: clear a stuck inFlight flag (if something went wrong operationally)
-    function clearInFlight(uint256 raffleId) external onlyAdmin {
+    function clearInFlight(uint256 raffleId) external onlyOwner {
         inFlight[raffleId] = false;
     }
 
@@ -231,7 +218,7 @@ contract RaffleAutomationVRF is
 
     /**
      * Allows anyone to fund the VRF v2.5 subscription with native token (ETH on Sepolia).
-     * Emits SubscriptionFunded.
+     * Emits SubscriptionFunded and (optionally) low-watermark alert.
      */
     function fundSubscriptionNative() external payable {
         if (msg.value == 0) revert AutomVRF__ZeroValue();
@@ -280,22 +267,17 @@ contract RaffleAutomationVRF is
                 }
             }
 
-            unchecked { ++scanned; }
+            scanned++;
             id = (id == last) ? 1 : (id + 1);
         }
 
         if (found == 0) return (false, bytes(""));
 
         uint256[] memory batch = new uint256[](found);
-        for (uint256 i = 0; i < found; ) {
-            batch[i] = tmp[i];
-            unchecked { ++i; }
-        }
-
-        uint256 nextCursor = id;
+        for (uint256 i = 0; i < found; i++) batch[i] = tmp[i];
 
         upkeepNeeded = true;
-        performData = abi.encode(batch, nextCursor);
+        performData = abi.encode(batch, id);
     }
 
     function performUpkeep(bytes calldata performData) external override {
@@ -306,33 +288,30 @@ contract RaffleAutomationVRF is
         uint256 last = next - 1;
 
         // update cursor
-        if (nextCursor < 1 || nextCursor > last) {
-            scanCursor = 1;
-        } else {
-            scanCursor = nextCursor;
-        }
+        if (nextCursor < 1 || nextCursor > last) scanCursor = 1;
+        else scanCursor = nextCursor;
+
         emit CursorUpdated(scanCursor);
 
         // lock raffles; skip ones that changed since checkUpkeep
         uint256[] memory locked = new uint256[](batch.length);
         uint256 lockedCount = 0;
 
-        for (uint256 i = 0; i < batch.length; ) {
+        for (uint256 i = 0; i < batch.length; i++) {
             uint256 raffleId = batch[i];
             address raffleAddr = marketplace.getRaffleAddress(raffleId);
 
-            if (raffleAddr != address(0) && !inFlight[raffleId]) {
-                // If startDraw reverts (not ready anymore / already calculating), skip.
-                try IRaffleFinalize(raffleAddr).startDraw() {
-                    inFlight[raffleId] = true;
-                    locked[lockedCount] = raffleId;
-                    unchecked { ++lockedCount; }
-                } catch {
-                    // skipped
-                }
-            }
+            if (raffleAddr == address(0)) continue;
+            if (inFlight[raffleId]) continue;
 
-            unchecked { ++i; }
+            // If startDraw reverts (not ready anymore / already calculating), skip.
+            try IRaffleFinalize(raffleAddr).startDraw() {
+                inFlight[raffleId] = true;
+                locked[lockedCount] = raffleId;
+                lockedCount++;
+            } catch {
+                // skipped
+            }
         }
 
         if (lockedCount == 0) revert AutomVRF__UpkeepNotNeeded();
@@ -353,21 +332,15 @@ contract RaffleAutomationVRF is
 
         // Persist batch under requestId
         uint256[] storage store = requestIdToBatch[requestId];
-        for (uint256 i = 0; i < lockedCount; ) {
-            store.push(locked[i]);
-            unchecked { ++i; }
-        }
+        for (uint256 i = 0; i < lockedCount; i++) store.push(locked[i]);
 
         // shrink for event
         uint256[] memory out = new uint256[](lockedCount);
-        for (uint256 i = 0; i < lockedCount; ) {
-            out[i] = locked[i];
-            unchecked { ++i; }
-        }
+        for (uint256 i = 0; i < lockedCount; i++) out[i] = locked[i];
 
         emit BatchLocked(requestId, out);
 
-        // Emit low-watermark alert (best-effort, non-blocking)
+        // Optional low-watermark alert (best-effort)
         _emitLowWatermarkIfNeeded();
     }
 
@@ -383,15 +356,13 @@ contract RaffleAutomationVRF is
         }
 
         uint256 base = randomWords[0];
-
-        // PATCH: allocate once (fixes "undeclared identifier / uninitialized array")
         uint256[] memory one;
 
         for (uint256 i = 0; i < n; ) {
             uint256 raffleId = batch[i];
             address raffleAddr = marketplace.getRaffleAddress(raffleId);
 
-            // release lock regardless (to avoid perma-stuck)
+            // release lock regardless (avoid perma-stuck)
             inFlight[raffleId] = false;
 
             if (raffleAddr != address(0)) {
@@ -435,15 +406,18 @@ contract RaffleAutomationVRF is
     /**
      * Register ONE Automation upkeep for this contract (global).
      * checkData is empty by design (batch scan happens internally).
+     *
+     * NOTE:
+     * - Uses base owner() from ConfirmedOwnerWithProposal via VRFConsumerBaseV2Plus.
      */
     function registerThisUpkeep(
         string memory name,
         uint32 gasLimit,
-        uint96 amount, // registrar funding (usually LINK)
+        uint96 amount, // registrar funding (often LINK; depends on registrar config)
         uint8 source
-    ) external onlyAdmin {
+    ) external onlyOwner {
         bytes memory empty;
-        registerAndPredictID(name, empty, address(this), gasLimit, admin, empty, amount, source);
+        registerAndPredictID(name, empty, address(this), gasLimit, owner(), empty, amount, source);
     }
 
     /* ========= Optional: expose request batches for debugging ========= */

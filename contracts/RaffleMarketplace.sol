@@ -1,557 +1,331 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-// Core structs/enums shared across contracts
+import "@openzeppelin/contracts/proxy/Clones.sol";
+
 import "./LibraryStruct.sol";
+import "./IRaffleMarketplace.sol";
+import "./IVerifier.sol";
 
-// Deploys raffle contract (direct deploy in this version)
-import "./Raffle.sol";
+error Marketplace__OnlyOwner();
+error Marketplace__ZeroAddress();
+error Marketplace__AlreadySet();
+error Marketplace__VerifierNotSet();
+error Marketplace__AutomationNotSet();
+error Marketplace__NftImplNotSet();
+error Marketplace__BadRaffleId();
+error Marketplace__NotRaffle();
 
-/* =========================
-   Errors
-========================= */
+interface IRaffleAutomationConfig {
+    function setAutomation(address automation) external;
+}
 
-error RaffleMarketplace__InvalidTickerId();
-error RaffleMarketplace__RaffleNotCreated(uint256 id);
-error RaffleMarketplace__OnlyHosterAllowed(address caller, address hoster);
-error RaffleMarketplace__OnlyOwnerAllowed();
+interface IRaffleSetNft {
+    function setRaffleNFT(address nft) external;
+}
 
-error RaffleMarketplace__PrizeDoesNotExist(uint256 raffleId, uint256 prizeId);
-error RaffleMarketplace__PrizeAlreadyExist(uint256 raffleId, uint256 prizeId);
+interface IRaffleNFTInit {
+    function initialize(address raffleAddress_, string calldata baseURI_) external;
+}
 
-error RaffleMarketplace__StageAlreadyExist(uint256 raffleId, RaffleLibrary.StageType stageType);
-error RaffleMarketplace__StageDoesNotExist(uint256 raffleId, RaffleLibrary.StageType stageType);
+/**
+ * RaffleMarketplace
+ * - owner immutable (never changes)
+ * - deploy raffle via Verifier (clones RaffleContract implementation)
+ * - clones RaffleNFT from an implementation and initializes it (baseURI + raffleAddress)
+ * - auto-wires raffle.setRaffleNFT(nft) and raffle.setAutomation(automation)
+ * - view API for Automation: getNextTickerId(), getRaffleAddress(id)
+ * - callbacks from RaffleContract: updateTicketsSold, updateCurrentOngoingStage, updateRaffleState, updateWinners
+ */
+contract RaffleMarketplace is IRaffleMarketplace {
+    address public immutable owner;
 
-error RaffleMarketplace__RaffleNotVerified();
-error RaffleMarketplace__RaffleVerified();
-
-/* =========================
-   Contract
-========================= */
-
-contract RaffleMarketplace {
-    /* =========================
-       Events
-    ========================= */
-
-    event RaffleCreated(
-        uint256 indexed raffleTicker,
-        address hoster,
-        RaffleLibrary.Raffle raffle,
-        RaffleLibrary.RaffleStage[] stages,
-        RaffleLibrary.RafflePrize[] prizes,
-        RaffleLibrary.StageType ongoingStage
-    );
-
-    event RaffleVerified(uint256 indexed raffleTicker, address indexed deployedRaffle);
-
-    event RaffleStageAdded(uint256 indexed raffleTicker, RaffleLibrary.RaffleStage stage);
-
-    event RaffleWinnersPicked(uint256 indexed raffleTicker, address payable[] winners);
-
-    event RaffleStateUpdated(uint256 indexed raffleTicker, RaffleLibrary.RaffleState indexed state);
-
-    event RaffleStageTicketPriceUpdated(
-        uint256 indexed raffleTicker,
-        RaffleLibrary.StageType indexed stageType,
-        uint256 indexed price
-    );
-
-    event RaffleStageTicketAvailabilityUpdated(
-        uint256 indexed raffleTicker,
-        RaffleLibrary.StageType indexed stageType,
-        uint256 indexed availability
-    );
-
-    event RaffleTicketBought(
-        uint256 indexed raffleTicker,
-        RaffleLibrary.StageType indexed stageType,
-        uint256 indexed ticketsBought,
-        address rafflePlayer
-    );
-
-    event RaffleStageUpdated(uint256 indexed raffleTicker, RaffleLibrary.StageType indexed currentStage);
-
-    /* =========================
-       Storage
-    ========================= */
-
-    // Next raffle id to be created
+    // raffle ids start at 1
     uint256 private raffleTicker;
 
-    // Admin (marketplace owner)
-    address public owner;
+    // infra addresses (set once)
+    address public verifier;                // Verifier (Clones-based)
+    address public automation;              // RaffleAutomationVRF
+    address public raffleNftImplementation; // RaffleNFT implementation for clones
 
-    // mapping of raffleId -> raffle struct
-    mapping(uint256 => RaffleLibrary.Raffle) private _raffles;
+    struct RaffleRecord {
+        address raffleAddress;
+        address payable raffleOwner;
+        address raffleNFT;
+        RaffleLibrary.RaffleState state;
+        RaffleLibrary.StageType currentStage;
+        uint256 createdAt;
+    }
 
-    // raffleId -> hoster address
-    mapping(uint256 => address) private _raffleHosterAddress;
+    // raffleId => record
+    mapping(uint256 => RaffleRecord) private raffles;
 
-    // raffleId -> prizes
-    mapping(uint256 => RaffleLibrary.RafflePrize[]) private _raffleToRafflePrizes;
+    // raffleId => stageType(uint256) => ticketsSold
+    mapping(uint256 => mapping(uint256 => uint256)) private ticketsSoldByStage;
 
-    // raffleId -> stages
-    mapping(uint256 => RaffleLibrary.RaffleStage[]) private _raffleToRaffleStages;
+    // raffleId => buyer => total tickets bought (optional analytics)
+    mapping(uint256 => mapping(address => uint256)) private ticketsBoughtByUser;
 
-    // raffleId -> ongoing stage (mirrored view; updated by raffle contract)
-    mapping(uint256 => RaffleLibrary.StageType) private _raffleToOngoingStages;
+    // raffleId => winners
+    mapping(uint256 => address payable[]) private winnersByRaffle;
 
-    /* =========================
-       Constructor
-    ========================= */
+    event VerifierSet(address indexed verifier);
+    event AutomationSet(address indexed automation);
+    event RaffleNftImplementationSet(address indexed nftImplementation);
+
+    event RaffleCreated(uint256 indexed raffleId, address indexed raffleAddress, address indexed raffleOwner);
+    event RaffleNftCloned(uint256 indexed raffleId, address indexed raffleNFT);
+
+    // Mirrors updates coming from RaffleContract
+    event RaffleStateUpdated(uint256 indexed raffleId, RaffleLibrary.RaffleState state);
+    event RaffleStageUpdated(uint256 indexed raffleId, RaffleLibrary.StageType stage);
+    event TicketsSoldUpdated(
+        uint256 indexed raffleId,
+        RaffleLibrary.StageType stage,
+        uint256 amount,
+        address indexed buyer
+    );
+    event WinnersUpdated(uint256 indexed raffleId, uint256 winnersCount);
 
     constructor() {
         owner = msg.sender;
         raffleTicker = 1;
     }
 
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert Marketplace__OnlyOwner();
+        _;
+    }
+
+    modifier onlyRaffle(uint256 raffleId_) {
+        address raffleAddr = raffles[raffleId_].raffleAddress;
+        if (raffleAddr == address(0)) revert Marketplace__BadRaffleId();
+        if (msg.sender != raffleAddr) revert Marketplace__NotRaffle();
+        _;
+    }
+
     /* =========================
-       Create / Verify
+       Infra one-time wiring
     ========================= */
 
-    function createRaffle(
-        RaffleLibrary.RaffleCategory _category,
-        string memory title,
-        string memory description,
-        uint256 raffleDuration,
-        uint256 threshold,
-        string[] memory images,
-        RaffleLibrary.RafflePrize[] memory prizes,
-        RaffleLibrary.CharityInformation memory charityInfo,
-        RaffleLibrary.RaffleStage[] memory stages
-    ) external {
-        // winners placeholder (length = prizes.length)
-        address payable[] memory winners = new address payable[](prizes.length);
-
-        RaffleLibrary.Raffle memory raffleStruct = RaffleLibrary.Raffle(
-            raffleTicker,
-            false,              // isVerifiedByMarketplace
-            address(0),         // raffleAddress (deployed later)
-            _category,
-            title,
-            description,
-            raffleDuration,
-            threshold,
-            images,
-            charityInfo,
-            winners,
-            RaffleLibrary.RaffleState.NOT_INITIALIZED
-        );
-
-        _raffles[raffleTicker] = raffleStruct;
-
-        _raffleHosterAddress[raffleTicker] = msg.sender;
-
-        _addStageInStorage(raffleTicker, stages);
-        _addPrizeInStorage(raffleTicker, prizes);
-
-        // initial ongoing stage = stages[0]
-        require(stages.length > 0, "RaffleMarketplace: no stages");
-        _raffleToOngoingStages[raffleTicker] = stages[0].stageType;
-
-        emit RaffleCreated(
-            raffleTicker,
-            msg.sender,
-            _raffles[raffleTicker],
-            _raffleToRaffleStages[raffleTicker],
-            _raffleToRafflePrizes[raffleTicker],
-            _raffleToOngoingStages[raffleTicker]
-        );
-
-        raffleTicker++;
+    function setVerifier(address _verifier) external onlyOwner {
+        if (_verifier == address(0)) revert Marketplace__ZeroAddress();
+        if (verifier != address(0)) revert Marketplace__AlreadySet();
+        verifier = _verifier;
+        emit VerifierSet(_verifier);
     }
 
-    /**
-     * @notice Marketplace owner verifies raffle and deploys its RaffleContract.
-     * @dev IMPORTANT: because RaffleContract.setAutomation() is onlyMarketplaceOwner (EOA),
-     *      you must call setAutomation() from the owner EOA directly (e.g. in deploy script),
-     *      not from inside this contract.
-     */
-    function verifyRaffle(uint256 id)
-        external
-        invalidTickerId(id)
-        doesRaffleExists(id)
-        onlyOwner
-        isRaffleNotVerified(id)
-    {
-        RaffleLibrary.Raffle storage raffleStruct = _raffles[id];
+    function setAutomation(address _automation) external onlyOwner {
+        if (_automation == address(0)) revert Marketplace__ZeroAddress();
+        if (automation != address(0)) revert Marketplace__AlreadySet();
+        automation = _automation;
+        emit AutomationSet(_automation);
+    }
 
-        // mark verified and open
-        raffleStruct.isVerifiedByMarketplace = true;
-        raffleStruct.raffleState = RaffleLibrary.RaffleState.OPEN;
-
-        // deploy raffle contract (no VRF inside raffle anymore)
-        RaffleContract raffle = new RaffleContract(
-            id,
-            raffleStruct.raffleDuration,
-            raffleStruct.threshold,
-            payable(_raffleHosterAddress[id]),
-            owner, // marketplaceOwner on raffle = this owner EOA
-            _raffleToRafflePrizes[id],
-            _raffleToRaffleStages[id],
-            address(this) // marketplace contract address
-        );
-
-        raffleStruct.raffleAddress = address(raffle);
-
-        emit RaffleStateUpdated(id, raffleStruct.raffleState);
-
-        // deploy NFT contract for tickets (baseURI from first image by your convention)
-        // name/symbol can be customized later if you want
-        string memory baseURI = "";
-        if (raffleStruct.images.length > 0) {
-            baseURI = raffleStruct.images[0];
-        }
-        raffle.createNftContract(baseURI, "RAFFLE", "RAFFLE");
-
-        emit RaffleVerified(id, address(raffle));
+    function setRaffleNftImplementation(address _nftImplementation) external onlyOwner {
+        if (_nftImplementation == address(0)) revert Marketplace__ZeroAddress();
+        if (raffleNftImplementation != address(0)) revert Marketplace__AlreadySet();
+        raffleNftImplementation = _nftImplementation;
+        emit RaffleNftImplementationSet(_nftImplementation);
     }
 
     /* =========================
-       Stage management (pre-verify)
-    ========================= */
-
-    function addStage(
-        uint256 raffleId,
-        RaffleLibrary.StageType stageType,
-        uint256 ticketsAvailable,
-        uint256 ticketPrice
-    )
-        external
-        invalidTickerId(raffleId)
-        doesRaffleExists(raffleId)
-        onlyRaffleHoster(raffleId)
-        isRaffleNotVerified(raffleId)
-        raffleStageNotExists(raffleId, stageType)
-    {
-        RaffleLibrary.RaffleStage memory stage = RaffleLibrary.RaffleStage(
-            stageType,
-            ticketsAvailable,
-            ticketPrice,
-            0
-        );
-        _raffleToRaffleStages[raffleId].push(stage);
-        emit RaffleStageAdded(raffleId, stage);
-    }
-
-    function modifyStagePrice(
-        uint256 raffleId,
-        RaffleLibrary.StageType stageType,
-        uint256 ticketAmount
-    )
-        external
-        invalidTickerId(raffleId)
-        doesRaffleExists(raffleId)
-        onlyRaffleHoster(raffleId)
-        isRaffleNotVerified(raffleId)
-        raffleStageExists(raffleId, stageType)
-    {
-        RaffleLibrary.RaffleStage[] storage stages = _raffleToRaffleStages[raffleId];
-        for (uint256 i = 0; i < stages.length; i++) {
-            if (stages[i].stageType == stageType) {
-                stages[i].ticketPrice = ticketAmount;
-            }
-        }
-        emit RaffleStageTicketPriceUpdated(raffleId, stageType, ticketAmount);
-    }
-
-    function modifyStageTickets(
-        uint256 raffleId,
-        RaffleLibrary.StageType stageType,
-        uint256 ticketsAvailable
-    )
-        external
-        invalidTickerId(raffleId)
-        doesRaffleExists(raffleId)
-        onlyRaffleHoster(raffleId)
-        isRaffleNotVerified(raffleId)
-        raffleStageExists(raffleId, stageType)
-    {
-        RaffleLibrary.RaffleStage[] storage stages = _raffleToRaffleStages[raffleId];
-        for (uint256 i = 0; i < stages.length; i++) {
-            if (stages[i].stageType == stageType) {
-                stages[i].ticketsAvailable = ticketsAvailable;
-            }
-        }
-        emit RaffleStageTicketAvailabilityUpdated(raffleId, stageType, ticketsAvailable);
-    }
-
-    /* =========================
-       Callbacks from RaffleContract
-       (only the deployed raffle contract can call these)
-    ========================= */
-
-    function updateWinners(uint256 id, address payable[] memory winners)
-        external
-        onlyRaffleContract(id)
-    {
-        _raffles[id].winners = winners;
-        emit RaffleWinnersPicked(id, winners);
-    }
-
-    function updateRaffleState(uint256 id, RaffleLibrary.RaffleState state)
-        external
-        onlyRaffleContract(id)
-    {
-        _raffles[id].raffleState = state;
-        emit RaffleStateUpdated(id, state);
-    }
-
-    function updateTicketsSold(
-        uint256 id,
-        RaffleLibrary.StageType stageType,
-        uint256 ticketsBought,
-        address rafflePlayer
-    ) external onlyRaffleContract(id) {
-        for (uint256 i = 0; i < _raffleToRaffleStages[id].length; i++) {
-            if (_raffleToRaffleStages[id][i].stageType == stageType) {
-                _raffleToRaffleStages[id][i].ticketsSold =
-                    _raffleToRaffleStages[id][i].ticketsSold + ticketsBought;
-
-                emit RaffleTicketBought(id, stageType, ticketsBought, rafflePlayer);
-                return;
-            }
-        }
-        // if stage not found, we silently ignore (or revert if you want strictness)
-    }
-
-    function updateCurrentOngoingStage(uint256 id, RaffleLibrary.StageType stageType)
-        external
-        onlyRaffleContract(id)
-    {
-        _raffleToOngoingStages[id] = stageType;
-        emit RaffleStageUpdated(id, stageType);
-    }
-
-    /* =========================
-       Views required by Automation contract
+       Automation view API
     ========================= */
 
     function getNextTickerId() external view returns (uint256) {
         return raffleTicker;
     }
 
-    function getRaffleAddress(uint256 id)
-        external
-        view
-        invalidTickerId(id)
-        doesRaffleExists(id)
-        returns (address)
-    {
-        return _raffles[id].raffleAddress;
+    function getRaffleAddress(uint256 id) external view returns (address) {
+        return raffles[id].raffleAddress;
     }
 
     /* =========================
-       Other views
+       Create raffle (hoster entrypoint)
     ========================= */
 
-    function getRaffleById(uint256 id)
+    /**
+     * @dev Creates RaffleContract via Verifier (Marketplace must be the caller, Verifier enforces onlyMarketplace).
+     * Also clones + initializes ticket NFT (RaffleNFT) from raffleNftImplementation.
+     * Finally sets trusted Automation caller on raffle.
+     *
+     * NOTE: nftName/nftSymbol kept for backward compatibility (ignored by clone-friendly NFT).
+     */
+    function createRaffle(
+        uint256 durationSeconds,
+        uint256 thresholdPercent,
+        RaffleLibrary.RafflePrize[] calldata prizes_,
+        RaffleLibrary.RaffleStage[] calldata stages_,
+        string calldata nftBaseURI,
+        string calldata /*nftName*/,
+        string calldata /*nftSymbol*/
+    ) external returns (uint256 raffleId, address raffleAddr) {
+        _requireInfra();
+
+        raffleId = raffleTicker;
+        unchecked {
+            raffleTicker = raffleId + 1;
+        }
+
+        raffleAddr = _deployViaVerifier(raffleId, durationSeconds, thresholdPercent, prizes_, stages_);
+        emit RaffleCreated(raffleId, raffleAddr, msg.sender);
+
+        address nft = _cloneInitAndWireNft(raffleAddr, nftBaseURI);
+        emit RaffleNftCloned(raffleId, nft);
+
+        // Strict wiring (если хотите best-effort — обернём в try/catch)
+        IRaffleAutomationConfig(raffleAddr).setAutomation(automation);
+
+        _storeRecord(raffleId, raffleAddr, nft, stages_);
+    }
+
+    function _requireInfra() internal view {
+        if (verifier == address(0)) revert Marketplace__VerifierNotSet();
+        if (automation == address(0)) revert Marketplace__AutomationNotSet();
+        if (raffleNftImplementation == address(0)) revert Marketplace__NftImplNotSet();
+    }
+
+    function _deployViaVerifier(
+        uint256 raffleId_,
+        uint256 durationSeconds_,
+        uint256 thresholdPercent_,
+        RaffleLibrary.RafflePrize[] calldata prizes_,
+        RaffleLibrary.RaffleStage[] calldata stages_
+    ) internal returns (address raffleAddr) {
+        // IMPORTANT: avoid struct literal => build step-by-step (reduces stack usage)
+        IVerifier.toPassFunc memory data;
+
+        data._raffleId = raffleId_;
+        data._durationOfRaffle = durationSeconds_;
+        data._threshold = thresholdPercent_;
+        data._raffleOwner = payable(msg.sender);
+        data._marketplceOwner = owner;
+
+        // calldata -> memory copy
+        data._prizes = prizes_;
+        data._stages = stages_;
+
+        raffleAddr = IVerifier(verifier).deployRaffle(data);
+    }
+
+    function _cloneInitAndWireNft(address raffleAddr, string calldata baseURI)
+        internal
+        returns (address nft)
+    {
+        nft = Clones.clone(raffleNftImplementation);
+        IRaffleNFTInit(nft).initialize(raffleAddr, baseURI);
+        IRaffleSetNft(raffleAddr).setRaffleNFT(nft);
+    }
+
+    function _storeRecord(
+        uint256 raffleId_,
+        address raffleAddr_,
+        address nft_,
+        RaffleLibrary.RaffleStage[] calldata stages_
+    ) internal {
+        RaffleRecord storage r = raffles[raffleId_];
+
+        r.raffleAddress = raffleAddr_;
+        r.raffleOwner = payable(msg.sender);
+        r.raffleNFT = nft_;
+        r.state = RaffleLibrary.RaffleState.OPEN;
+        r.currentStage = stages_.length != 0 ? stages_[0].stageType : RaffleLibrary.StageType(0);
+        r.createdAt = block.timestamp;
+    }
+
+    /* =========================
+       Callbacks from RaffleContract (IRaffleMarketplace)
+    ========================= */
+
+    function updateTicketsSold(
+        uint256 _raffleId,
+        RaffleLibrary.StageType stageType,
+        uint256 amount,
+        address buyer
+    ) external onlyRaffle(_raffleId) {
+        ticketsSoldByStage[_raffleId][uint256(stageType)] += amount;
+        ticketsBoughtByUser[_raffleId][buyer] += amount;
+        emit TicketsSoldUpdated(_raffleId, stageType, amount, buyer);
+    }
+
+    function updateCurrentOngoingStage(uint256 _raffleId, RaffleLibrary.StageType stageType)
+        external
+        onlyRaffle(_raffleId)
+    {
+        raffles[_raffleId].currentStage = stageType;
+        emit RaffleStageUpdated(_raffleId, stageType);
+    }
+
+    function updateRaffleState(uint256 _raffleId, RaffleLibrary.RaffleState newState)
+        external
+        onlyRaffle(_raffleId)
+    {
+        raffles[_raffleId].state = newState;
+        emit RaffleStateUpdated(_raffleId, newState);
+    }
+
+    function updateWinners(uint256 _raffleId, address payable[] calldata winners_)
+        external
+        onlyRaffle(_raffleId)
+    {
+        delete winnersByRaffle[_raffleId];
+        for (uint256 i = 0; i < winners_.length; ) {
+            winnersByRaffle[_raffleId].push(winners_[i]);
+            unchecked { ++i; }
+        }
+        emit WinnersUpdated(_raffleId, winners_.length);
+    }
+
+    /* =========================
+       Frontend-oriented getters
+    ========================= */
+
+    function getOwner() external view returns (address) {
+        return owner;
+    }
+
+    function getVerifier() external view returns (address) {
+        return verifier;
+    }
+
+    function getAutomation() external view returns (address) {
+        return automation;
+    }
+
+    function getRaffleNftImplementation() external view returns (address) {
+        return raffleNftImplementation;
+    }
+
+    function getRaffleRecord(uint256 raffleId_)
         external
         view
-        invalidTickerId(id)
-        doesRaffleExists(id)
         returns (
-            RaffleLibrary.Raffle memory,
-            RaffleLibrary.RafflePrize[] memory,
-            RaffleLibrary.RaffleStage[] memory
+            address raffleAddress,
+            address raffleOwner,
+            address raffleNFT,
+            RaffleLibrary.RaffleState state,
+            RaffleLibrary.StageType currentStage,
+            uint256 createdAt
         )
     {
-        return (_raffles[id], _raffleToRafflePrizes[id], _raffleToRaffleStages[id]);
+        RaffleRecord storage r = raffles[raffleId_];
+        if (r.raffleAddress == address(0)) revert Marketplace__BadRaffleId();
+        return (r.raffleAddress, r.raffleOwner, r.raffleNFT, r.state, r.currentStage, r.createdAt);
     }
 
-    function getRaffleHosterById(uint256 id)
-        external
-        view
-        invalidTickerId(id)
-        doesRaffleExists(id)
-        returns (address)
-    {
-        return _raffleHosterAddress[id];
+    function getTicketsSoldByStage(uint256 raffleId_, RaffleLibrary.StageType stageType) external view returns (uint256) {
+        if (raffles[raffleId_].raffleAddress == address(0)) revert Marketplace__BadRaffleId();
+        return ticketsSoldByStage[raffleId_][uint256(stageType)];
     }
 
-    function getRaffleStagesById(uint256 id)
-        public
-        view
-        invalidTickerId(id)
-        doesRaffleExists(id)
-        returns (RaffleLibrary.RaffleStage[] memory)
-    {
-        return _raffleToRaffleStages[id];
+    function getUserTicketsBought(uint256 raffleId_, address user) external view returns (uint256) {
+        if (raffles[raffleId_].raffleAddress == address(0)) revert Marketplace__BadRaffleId();
+        return ticketsBoughtByUser[raffleId_][user];
     }
 
-    function getParticularRaffleStage(uint256 id, RaffleLibrary.StageType stageType)
-        external
-        view
-        invalidTickerId(id)
-        doesRaffleExists(id)
-        raffleStageExists(id, stageType)
-        returns (RaffleLibrary.RaffleStage memory)
-    {
-        RaffleLibrary.RaffleStage[] memory stages = _raffleToRaffleStages[id];
-        for (uint256 i = 0; i < stages.length; i++) {
-            if (stages[i].stageType == stageType) return stages[i];
-        }
-        // should be unreachable because of raffleStageExists
-        revert RaffleMarketplace__StageDoesNotExist(id, stageType);
-    }
-
-    function getOngoingRaffleStage(uint256 id)
-        external
-        view
-        invalidTickerId(id)
-        doesRaffleExists(id)
-        returns (RaffleLibrary.StageType)
-    {
-        return _raffleToOngoingStages[id];
-    }
-
-    function getRaffleVerificationInfo(uint256 id)
-        external
-        view
-        invalidTickerId(id)
-        doesRaffleExists(id)
-        returns (bool)
-    {
-        return _raffles[id].isVerifiedByMarketplace;
-    }
-
-    /* =========================
-       Admin
-    ========================= */
-
-    function updateOwner(address _owner) external onlyOwner {
-        owner = _owner;
-    }
-
-    /* =========================
-       Internal storage helpers
-    ========================= */
-
-    function _addStageInStorage(uint256 id, RaffleLibrary.RaffleStage[] memory stages) internal {
-        require(stages.length > 0, "RaffleMarketplace: no stages");
-        for (uint256 i = 0; i < stages.length; i++) {
-            _raffleToRaffleStages[id].push(
-                RaffleLibrary.RaffleStage(
-                    stages[i].stageType,
-                    stages[i].ticketsAvailable,
-                    stages[i].ticketPrice,
-                    0
-                )
-            );
-        }
-    }
-
-    function _addPrizeInStorage(uint256 id, RaffleLibrary.RafflePrize[] memory prizes) internal {
-        for (uint256 i = 0; i < prizes.length; i++) {
-            _raffleToRafflePrizes[id].push(
-                RaffleLibrary.RafflePrize(
-                    prizes[i].prizeTitle,
-                    prizes[i].country,
-                    prizes[i].prizeAmount
-                )
-            );
-        }
-    }
-
-    /* =========================
-       Modifiers / checks
-    ========================= */
-
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert RaffleMarketplace__OnlyOwnerAllowed();
-        _;
-    }
-
-    function _invalidTickerId(uint256 _id) internal pure {
-        if (_id == 0) revert RaffleMarketplace__InvalidTickerId();
-    }
-
-    modifier invalidTickerId(uint256 _id) {
-        _invalidTickerId(_id);
-        _;
-    }
-
-    function _doesRaffleExists(uint256 id) internal view {
-        if (_raffles[id].id == 0) revert RaffleMarketplace__RaffleNotCreated(id);
-    }
-
-    modifier doesRaffleExists(uint256 id) {
-        _doesRaffleExists(id);
-        _;
-    }
-
-    function _onlyRaffleHoster(uint256 id) internal view {
-        if (msg.sender != _raffleHosterAddress[id]) {
-            revert RaffleMarketplace__OnlyHosterAllowed(msg.sender, _raffleHosterAddress[id]);
-        }
-    }
-
-    modifier onlyRaffleHoster(uint256 id) {
-        _onlyRaffleHoster(id);
-        _;
-    }
-
-    function _onlyRaffleContract(uint256 id) internal view {
-        address raffleAddr = _raffles[id].raffleAddress;
-        require(raffleAddr != address(0), "RaffleMarketplace: raffle not deployed");
-        require(msg.sender == raffleAddr, "RaffleMarketplace: only raffle");
-    }
-
-    modifier onlyRaffleContract(uint256 id) {
-        _onlyRaffleContract(id);
-        _;
-    }
-
-    function doesRaffleStageExists(uint256 raffleId, RaffleLibrary.StageType stageType)
-        public
-        view
-        returns (bool)
-    {
-        RaffleLibrary.RaffleStage[] memory stages = _raffleToRaffleStages[raffleId];
-        for (uint256 i = 0; i < stages.length; i++) {
-            if (stages[i].stageType == stageType) return true;
-        }
-        return false;
-    }
-
-    function _raffleStageExists(uint256 raffleId, RaffleLibrary.StageType stageType) internal view {
-        if (!doesRaffleStageExists(raffleId, stageType)) {
-            revert RaffleMarketplace__StageDoesNotExist(raffleId, stageType);
-        }
-    }
-
-    modifier raffleStageExists(uint256 raffleId, RaffleLibrary.StageType stageType) {
-        _raffleStageExists(raffleId, stageType);
-        _;
-    }
-
-    function _raffleStageNotExists(uint256 raffleId, RaffleLibrary.StageType stageType) internal view {
-        if (doesRaffleStageExists(raffleId, stageType)) {
-            revert RaffleMarketplace__StageAlreadyExist(raffleId, stageType);
-        }
-    }
-
-    modifier raffleStageNotExists(uint256 raffleId, RaffleLibrary.StageType stageType) {
-        _raffleStageNotExists(raffleId, stageType);
-        _;
-    }
-
-    function _isRaffleVerified(uint256 id) internal view {
-        if (!_raffles[id].isVerifiedByMarketplace) revert RaffleMarketplace__RaffleNotVerified();
-    }
-
-    modifier isRaffleVerified(uint256 id) {
-        _isRaffleVerified(id);
-        _;
-    }
-
-    function _isRaffleNotVerified(uint256 id) internal view {
-        if (_raffles[id].isVerifiedByMarketplace) revert RaffleMarketplace__RaffleVerified();
-    }
-
-    modifier isRaffleNotVerified(uint256 id) {
-        _isRaffleNotVerified(id);
-        _;
+    function getWinners(uint256 raffleId_) external view returns (address payable[] memory) {
+        if (raffles[raffleId_].raffleAddress == address(0)) revert Marketplace__BadRaffleId();
+        return winnersByRaffle[raffleId_];
     }
 }

@@ -97,7 +97,6 @@ contract PromoRaffle is ERC2771Recipient {
         }
 
         s_raffleState = RaffleState.CALCULATING;
-        uint256 playersBeforePick = s_players.length;
 
         // rebuild players from current tokenIds (bounded by playersNeeded)
         while (s_players.length > 0) s_players.pop();
@@ -111,7 +110,7 @@ contract PromoRaffle is ERC2771Recipient {
 
         address payable recentWinner = s_players[indexOfWinner];
         s_recentWinner = recentWinner;
-        emit WinnerPicked(s_cycles, playersBeforePick, recentWinner);
+        emit WinnerPicked(s_cycles, tokensInRaffle.length, recentWinner);
 
         s_cycles++;
         s_lastTimestamp = block.timestamp;
