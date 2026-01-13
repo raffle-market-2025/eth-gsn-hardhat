@@ -30,8 +30,7 @@ contract PromoRaffle is ERC2771Recipient {
     address public promoNft = address(0);
     address public promoNftSender = address(0);
 
-    // UPDATED: added cycle
-    event RaffleEnter(address indexed _player, bytes32 _ipHash, bytes3 _country3, uint256 _lastTimestamp, uint256 cycle);
+    event RaffleEnter(address indexed _player, bytes32 _ipHash, bytes2 _country2, uint256 _lastTimestamp, uint256 cycle);
 
     // cheaper: no players array in event
     event WinnerPicked(uint256 cycle, uint256 playersBeforePick, address indexed winner);
@@ -58,7 +57,7 @@ contract PromoRaffle is ERC2771Recipient {
         return address(this).balance;
     }
 
-    function enterRaffle(bytes32 ipHash, bytes3 country3) public {
+    function enterRaffle(bytes32 ipHash, bytes2 country2) public {
         if (s_raffleState != RaffleState.OPEN) revert Raffle__NotOpen();
         if (promoNft == address(0)) revert Raffle__NftNotSet();
 
@@ -72,7 +71,7 @@ contract PromoRaffle is ERC2771Recipient {
 
         tokensInRaffle.push(mintedTokenId);
 
-        emit RaffleEnter(sender, ipHash, country3, s_lastTimestamp, s_cycles);
+        emit RaffleEnter(sender, ipHash, country2, s_lastTimestamp, s_cycles);
 
         if (tokensInRaffle.length >= playersNeeded) {
             _runRaffle();

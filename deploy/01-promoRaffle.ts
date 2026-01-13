@@ -33,15 +33,15 @@ async function main() {
 
   const promoFundAmount = ethers.parseEther("0.005"); // 0.005 ETH
 
-  const asBytes3 = (s: string) => {
+  const asBytes2 = (s: string) => {
     const b = ethers.toUtf8Bytes(s);
-    if (b.length < 2 || b.length > 3) {
-      throw new Error("country3 must be 2 or 3 ASCII chars");
+    if (b.length < 2 || b.length > 2) {
+      throw new Error("country2 must be 2 ASCII chars");
     }
-    // right-pad to 3 bytes for bytes3
-    const padded = new Uint8Array(3);
+    // right-pad to 2 bytes for bytes2
+    const padded = new Uint8Array(2);
     padded.set(b, 0);
-    return ethers.hexlify(padded); // e.g. "USA" -> 0x555341
+    return ethers.hexlify(padded); // e.g. "US" -> 0x5553
   };
 
   console.log("----------------------------------------------------");
@@ -131,7 +131,7 @@ async function main() {
   console.log("----- PromoRaffle test run started ---------------------------------------");
 
   const ipHash = ethers.keccak256(ethers.toUtf8Bytes("192.168.0.1"));
-  const enterTx = await promoRaffle.enterRaffle(ipHash, asBytes3("USA"));
+  const enterTx = await promoRaffle.enterRaffle(ipHash, asBytes2("US"));
   console.log("Entering PromoRaffle, tx hash:", enterTx.hash);
   await enterTx.wait(waitConfirmations);
 

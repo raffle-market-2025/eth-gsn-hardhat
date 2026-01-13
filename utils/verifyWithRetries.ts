@@ -4,11 +4,14 @@ import { verifyContract } from "@nomicfoundation/hardhat-verify/verify";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function verifyWithRetries(address: string, constructorArgs: any[]) {
+  const { ethers } = await network.connect();
+  const net = await ethers.provider.getNetwork();
+
   // Skip verification on local networks
   const skip = new Set(["hardhat", "localhost"]);
-  if (skip.has((network as any).name)) return;
+  if (skip.has(net.name)) return;
 
-  console.log(`Start verifying address ${address} on network ${(network as any).name}...`);
+  console.log(`Start verifying address ${address} on network ${net.name}...`);
 
   for (let attempt = 1; attempt <= 8; attempt++) {
     try {
