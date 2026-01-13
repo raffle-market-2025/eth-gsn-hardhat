@@ -20,14 +20,16 @@ describe("Describe entity assertions", () => {
     let _player = Address.fromString(
       "0x0000000000000000000000000000000000000001"
     )
-    let _ip = "Example string value"
-    let _country3 = Bytes.fromI32(1234567890)
+    let _ipHash = Bytes.fromI32(1234567890)
+    let _country2 = Bytes.fromI32(1234567890)
     let _lastTimestamp = BigInt.fromI32(234)
+    let cycle = BigInt.fromI32(234)
     let newRaffleEnterEvent = createRaffleEnterEvent(
       _player,
-      _ip,
-      _country3,
-      _lastTimestamp
+      _ipHash,
+      _country2,
+      _lastTimestamp,
+      cycle
     )
     handleRaffleEnter(newRaffleEnterEvent)
   })
@@ -52,19 +54,25 @@ describe("Describe entity assertions", () => {
     assert.fieldEquals(
       "RaffleEnter",
       "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
-      "_ip",
-      "Example string value"
+      "_ipHash",
+      "1234567890"
     )
     assert.fieldEquals(
       "RaffleEnter",
       "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
-      "_country3",
+      "_country2",
       "1234567890"
     )
     assert.fieldEquals(
       "RaffleEnter",
       "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
       "_lastTimestamp",
+      "234"
+    )
+    assert.fieldEquals(
+      "RaffleEnter",
+      "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
+      "cycle",
       "234"
     )
 

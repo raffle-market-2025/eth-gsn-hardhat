@@ -9,9 +9,10 @@ import {
 
 export function createRaffleEnterEvent(
   _player: Address,
-  _ip: string,
-  _country3: Bytes,
-  _lastTimestamp: BigInt
+  _ipHash: Bytes,
+  _country2: Bytes,
+  _lastTimestamp: BigInt,
+  cycle: BigInt
 ): RaffleEnter {
   let raffleEnterEvent = changetype<RaffleEnter>(newMockEvent())
 
@@ -21,12 +22,12 @@ export function createRaffleEnterEvent(
     new ethereum.EventParam("_player", ethereum.Value.fromAddress(_player))
   )
   raffleEnterEvent.parameters.push(
-    new ethereum.EventParam("_ip", ethereum.Value.fromString(_ip))
+    new ethereum.EventParam("_ipHash", ethereum.Value.fromFixedBytes(_ipHash))
   )
   raffleEnterEvent.parameters.push(
     new ethereum.EventParam(
-      "_country3",
-      ethereum.Value.fromFixedBytes(_country3)
+      "_country2",
+      ethereum.Value.fromFixedBytes(_country2)
     )
   )
   raffleEnterEvent.parameters.push(
@@ -34,6 +35,9 @@ export function createRaffleEnterEvent(
       "_lastTimestamp",
       ethereum.Value.fromUnsignedBigInt(_lastTimestamp)
     )
+  )
+  raffleEnterEvent.parameters.push(
+    new ethereum.EventParam("cycle", ethereum.Value.fromUnsignedBigInt(cycle))
   )
 
   return raffleEnterEvent
@@ -77,7 +81,7 @@ export function createRafflePrizePaidEvent(
 
 export function createWinnerPickedEvent(
   cycle: BigInt,
-  players: Array<Address>,
+  playersBeforePick: BigInt,
   winner: Address
 ): WinnerPicked {
   let winnerPickedEvent = changetype<WinnerPicked>(newMockEvent())
@@ -88,7 +92,10 @@ export function createWinnerPickedEvent(
     new ethereum.EventParam("cycle", ethereum.Value.fromUnsignedBigInt(cycle))
   )
   winnerPickedEvent.parameters.push(
-    new ethereum.EventParam("players", ethereum.Value.fromAddressArray(players))
+    new ethereum.EventParam(
+      "playersBeforePick",
+      ethereum.Value.fromUnsignedBigInt(playersBeforePick)
+    )
   )
   winnerPickedEvent.parameters.push(
     new ethereum.EventParam("winner", ethereum.Value.fromAddress(winner))

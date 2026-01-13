@@ -1,24 +1,10 @@
 type RaffleEnter @entity(immutable: true) {
   id: Bytes!
-
-  _player: Bytes!       # address
-  _ipHash: Bytes!       # bytes32
-  _country3: Bytes!     # bytes3
+  _player: Bytes! # address
+  _ipHash: Bytes! # bytes32
+  _country2: Bytes! # bytes2
   _lastTimestamp: BigInt! # uint256
-  cycle: BigInt!        # uint256
-
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type WinnerPicked @entity(immutable: true) {
-  id: Bytes!
-
-  cycle: BigInt!              # uint256
-  playersBeforePick: BigInt!  # uint256
-  winner: Bytes!              # address
-
+  cycle: BigInt! # uint256
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
@@ -26,10 +12,8 @@ type WinnerPicked @entity(immutable: true) {
 
 type RaffleFundsReceived @entity(immutable: true) {
   id: Bytes!
-
-  from: Bytes!        # address
-  amount: BigInt!     # uint256
-
+  from: Bytes! # address
+  amount: BigInt! # uint256
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
@@ -37,10 +21,18 @@ type RaffleFundsReceived @entity(immutable: true) {
 
 type RafflePrizePaid @entity(immutable: true) {
   id: Bytes!
+  winner: Bytes! # address
+  amount: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
 
-  winner: Bytes!      # address
-  amount: BigInt!     # uint256
-
+type WinnerPicked @entity(immutable: true) {
+  id: Bytes!
+  cycle: BigInt! # uint256
+  playersBeforePick: BigInt! # uint256
+  winner: Bytes! # address
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!

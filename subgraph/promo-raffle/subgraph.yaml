@@ -8,9 +8,9 @@ dataSources:
     name: PromoRaffle
     network: sepolia
     source:
-      address: "0xeED226FD66742e4E872fc8e17cF1f2633fA06D3c"
+      address: "0x230C862AA31DBFB818E1EC0b49ff558045dB89c2"
       abi: PromoRaffle
-      startBlock: 9858122
+      startBlock: 10032538
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -24,7 +24,7 @@ dataSources:
         - name: PromoRaffle
           file: ./abis/PromoRaffle.json
       eventHandlers:
-        - event: RaffleEnter(indexed address,bytes32,bytes3,uint256,uint256)
+        - event: RaffleEnter(indexed address,bytes32,bytes2,uint256,uint256)
           handler: handleRaffleEnter
         - event: RaffleFundsReceived(indexed address,uint256)
           handler: handleRaffleFundsReceived
