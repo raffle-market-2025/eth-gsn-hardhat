@@ -2,20 +2,11 @@
 pragma solidity ^0.8.28;
 
 library RaffleLibrary {
-    struct RaffleStage {
-        StageType stageType;    
-        uint256 ticketsAvailable;
-        uint256 ticketPrice;
-        uint256 ticketsSold;
-    }
+    /* =========================
+       Enums
+    ========================= */
 
-    enum StageType{
-        PRESALE,
-        SALE,
-        PREMIUM
-    }
-
-     enum RaffleState {
+    enum RaffleState {
         NOT_INITIALIZED,
         OPEN,
         CALCULATING,
@@ -23,48 +14,16 @@ library RaffleLibrary {
         REVERTED
     }
 
-    enum RaffleCategory {
-        COLLECTIBLE,
-        HOME_IMPROVEMENT,
-        FASHION,
-        FOOD_AND_BEVERAGES,
-        HEALTH_AND_BEAUTY,
-        JEWELLERY,
-        MISCELLANEOUS,
-        REALTY,
-        SPORTS,
-        TECH,
-        VEHICLES,
-
-        FINANCE
+    // ✅ keep the type as enum, but lets update values to match your current architecture
+    enum StageType {
+        PRESALE,
+        SALE,
+        PREMIUM
     }
 
-    // The countries which are supported for delivering/collecting the prize
-    enum PrizeCollectionCountry {
-        UA,
-        UK,
-        PL,
-        IT,
-        EU,
-        CA,
-        US,
-
-        INT
-    }
-
-    // Prize structure for a raffle - A raffle can have multiple prizes
-    struct RafflePrize {
-        string prizeTitle;
-        PrizeCollectionCountry country;
-        uint256 prizeAmount;
-    }
-
-    // Information about charity if a hoster wants to donate some revenue amount to charity via charity's wallet address
-    struct CharityInformation {
-        string charityName;
-        address payable charityAddress;
-        uint256 percentToDonate;
-    }
+    /* =========================
+       Structs
+    ========================= */
 
     // Main Raffle Structure
     struct Raffle {
@@ -77,16 +36,56 @@ library RaffleLibrary {
         uint256 raffleDuration; // how long will the raffle go on once starts
         uint256 threshold;  // if we sold x number of tickers, then the raffle ends even tho if its before the end duration
         string[] images; // ipfs uploaded uris of images of main raffle prize
-        CharityInformation charityInfo; // information about charity
         address payable[] winners; // winners of the raffle
+
         // country from where the prize is to be collected / delivery where the prize can be delivered
         RaffleState raffleState; // state of the raffle, init as not_initialized
+
+        CharityInformation charityInfo; // information about charity
     }
 
-    // ticket price and id of nft
+    // Prize structure for a raffle - A raffle can have multiple prizes
+    // country2: ISO 3166-1 alpha-2 (bytes2), e.g. "UA", "US", "GB"
+    // Use "UN" for global/international (replaces old INT).
+    struct RafflePrize {
+        string prizeTitle;
+        bytes2 country2;
+        uint256 prizeAmount;
+    }
+
+    struct RaffleStage {
+        StageType stageType;
+        uint256 ticketsAvailable;
+        uint256 ticketPrice;
+        uint256 ticketsSold;
+    }
+
+    enum RaffleCategory {
+        COLLECTIBLE,
+        HOME_IMPROVEMENT,
+        FASHION,
+        FOOD_AND_BEVERAGES,
+        HEALTH_AND_BEAUTY,
+        JEWELLERY,
+        MISCELLANEOUS,
+        REAL_ESTATE,
+        SPORTS,
+        TECH,
+        VEHICLES,
+
+        FINANCE
+    }
+
     struct Players {
         uint256 ticketPrice;
-        uint id;
+        uint256 id; // tokenId
+    }
+
+    // Information about charity if a hoster wants to donate some revenue amount to charity via charity's wallet address
+    struct CharityInformation {
+        string charityName;
+        address payable charityAddress;
+        uint256 percentToDonate;
     }
 
     function _shuffle(Players[] memory players) internal view returns(uint[] memory) {

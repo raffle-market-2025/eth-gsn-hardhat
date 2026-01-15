@@ -10,11 +10,9 @@ interface IVerifier {
         uint256 _threshold;
         address payable _raffleOwner;
         address _marketplceOwner;
-        RaffleLibrary.RafflePrize[] _prizes;
+        RaffleLibrary.RafflePrize[] _prizes; // now uses bytes2 country2 inside
         RaffleLibrary.RaffleStage[] _stages;
     }
 
-    function deployRaffle(
-        toPassFunc memory data
-    ) external returns (address raffle);
+    function deployRaffle(toPassFunc memory data) external returns (address raffle);
 }
