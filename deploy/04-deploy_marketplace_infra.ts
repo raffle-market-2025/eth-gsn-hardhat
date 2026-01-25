@@ -51,16 +51,37 @@ async function main() {
   // 2) Deploy RaffleContract implementation (Clones target)
   // ============================================================
   console.log("Deploying RaffleContract (implementation)...");
-  const RaffleImplFactory = await ethers.getContractFactory("RaffleContract", deployer);
+  const RaffleImplFactory = await ethers.getContractFactory(
+    "RaffleContract",
+    deployer
+  );
   const raffleImpl = await RaffleImplFactory.deploy();
   console.log("Tx hash:", raffleImpl.deploymentTransaction()?.hash);
   await raffleImpl.waitForDeployment();
   const addressRaffleImpl = await raffleImpl.getAddress();
   console.log("RaffleContract implementation deployed at:", addressRaffleImpl);
-  writeAddressJson("build/raffle/RaffleContractImplementation.json", addressRaffleImpl);
+  writeAddressJson(
+    "build/raffle/RaffleContractImplementation.json",
+    addressRaffleImpl
+  );
 
   // ============================================================
-  // 3) Deploy Verifier(marketplace, implementation)
+  // 3) Deploy RaffleNFT implementation (Clones target)  ✅ NEW
+  // ============================================================
+  console.log("Deploying RaffleNFT (implementation)...");
+  const NftImplFactory = await ethers.getContractFactory("RaffleNFT", deployer);
+  const nftImpl = await NftImplFactory.deploy(); // no args for implementation
+  console.log("Tx hash:", nftImpl.deploymentTransaction()?.hash);
+  await nftImpl.waitForDeployment();
+  const addressNftImpl = await nftImpl.getAddress();
+  console.log("RaffleNFT implementation deployed at:", addressNftImpl);
+  writeAddressJson(
+    "build/raffle/RaffleNFTImplementation.json",
+    addressNftImpl
+  );
+
+  // ============================================================
+  // 4) Deploy Verifier(marketplace, implementation)
   // ============================================================
   console.log("Deploying Verifier...");
   const VerifierFactory = await ethers.getContractFactory("Verifier", deployer);
@@ -75,17 +96,47 @@ async function main() {
   writeAddressJson("build/raffle/Verifier.json", addressVerifier);
 
   // ============================================================
-  // Dev-only shortcut (optional)
+  // Dev-only shortcut
   // ============================================================
   if (isDev) {
     console.log("Dev chain detected: skipping Sepolia VRF/Automation infra.");
-    console.log("You can deploy mocks or run a separate local infra script.");
-    console.log("Done.");
+    console.log("Wiring marketplace (verifier + nftImpl) on dev...");
+
+    const marketplaceWriteDev = new ethers.Contract(
+      addressMarketplace,
+      [
+        "function setVerifier(address) external",
+        "function setRaffleNftImplementation(address) external",
+      ],
+      deployer
+    );
+
+    try {
+      const tx = await marketplaceWriteDev.setVerifier(addressVerifier);
+      await tx.wait(waitConfirmations);
+      console.log("Marketplace.setVerifier OK");
+    } catch (e: any) {
+      console.log(
+        `Marketplace.setVerifier skipped/failed: ${e?.message ?? String(e)}`
+      );
+    }
+
+    try {
+      const tx = await marketplaceWriteDev.setRaffleNftImplementation(addressNftImpl);
+      await tx.wait(waitConfirmations);
+      console.log("Marketplace.setRaffleNftImplementation OK");
+    } catch (e: any) {
+      console.log(
+        `Marketplace.setRaffleNftImplementation skipped/failed: ${e?.message ?? String(e)}`
+      );
+    }
+
+    console.log("Done (dev).");
     return;
   }
 
   // ============================================================
-  // 4) VRF v2.5 Subscription (create or reuse)
+  // 5) VRF v2.5 Subscription (create or reuse)
   // ============================================================
   if (!cfg) throw new Error("Missing networkConfig for Sepolia");
 
@@ -100,7 +151,9 @@ async function main() {
 
   if (envSubId && envSubId !== "0") {
     subId = BigInt(envSubId);
-    console.log(`Using existing VRF subscriptionId from env: ${subId.toString()}`);
+    console.log(
+      `Using existing VRF subscriptionId from env: ${subId.toString()}`
+    );
   } else {
     console.log("Creating VRF v2.5 subscription (Sepolia)...");
     const predicted: bigint = await coordinator.createSubscription.staticCall();
@@ -111,11 +164,15 @@ async function main() {
   }
 
   // ============================================================
-  // 5) Deploy RaffleAutomationVRF(...)
+  // 6) Deploy RaffleAutomationVRF(...)
   // ============================================================
   console.log("Deploying RaffleAutomationVRF...");
 
-  const AutomationFactory = await ethers.getContractFactory("RaffleAutomationVRF", deployer);
+  const AutomationFactory = await ethers.getContractFactory(
+    "RaffleAutomationVRF",
+    deployer
+  );
+
   const automationArgs: [
     string,
     string,
@@ -147,7 +204,9 @@ async function main() {
   writeAddressJson("build/raffle/RaffleAutomationVRF.json", addressAutomation);
 
   // ============================================================
-  // 6) Wiring: marketplace.setVerifier + marketplace.setAutomation + VRF addConsumer
+  // 7) Wiring:
+  //    marketplace.setVerifier + setAutomation + setRaffleNftImplementation
+  //    + VRF addConsumer
   // ============================================================
   console.log("Wiring infra...");
 
@@ -156,6 +215,7 @@ async function main() {
     [
       "function setVerifier(address) external",
       "function setAutomation(address) external",
+      "function setRaffleNftImplementation(address) external",
     ],
     deployer
   );
@@ -165,7 +225,9 @@ async function main() {
     await tx.wait(waitConfirmations);
     console.log("Marketplace.setVerifier OK");
   } catch (e: any) {
-    console.log(`Marketplace.setVerifier skipped/failed: ${e?.message ?? String(e)}`);
+    console.log(
+      `Marketplace.setVerifier skipped/failed: ${e?.message ?? String(e)}`
+    );
   }
 
   try {
@@ -173,7 +235,20 @@ async function main() {
     await tx.wait(waitConfirmations);
     console.log("Marketplace.setAutomation OK");
   } catch (e: any) {
-    console.log(`Marketplace.setAutomation skipped/failed: ${e?.message ?? String(e)}`);
+    console.log(
+      `Marketplace.setAutomation skipped/failed: ${e?.message ?? String(e)}`
+    );
+  }
+
+  // ✅ NEW: set raffleNftImplementation
+  try {
+    const tx = await marketplaceWrite.setRaffleNftImplementation(addressNftImpl);
+    await tx.wait(waitConfirmations);
+    console.log("Marketplace.setRaffleNftImplementation OK");
+  } catch (e: any) {
+    console.log(
+      `Marketplace.setRaffleNftImplementation skipped/failed: ${e?.message ?? String(e)}`
+    );
   }
 
   try {
@@ -181,7 +256,9 @@ async function main() {
     await tx.wait(waitConfirmations);
     console.log("VRFCoordinator.addConsumer(Automation) OK");
   } catch (e: any) {
-    console.log(`VRFCoordinator.addConsumer skipped/failed: ${e?.message ?? String(e)}`);
+    console.log(
+      `VRFCoordinator.addConsumer skipped/failed: ${e?.message ?? String(e)}`
+    );
   }
 
   // Optional: initial native funding via Automation helper
@@ -193,22 +270,27 @@ async function main() {
         ["function fundSubscriptionNative() external payable"],
         deployer
       );
-      const tx = await automationWrite.fundSubscriptionNative({ value: BigInt(fundWei) });
+      const tx = await automationWrite.fundSubscriptionNative({
+        value: BigInt(fundWei),
+      });
       await tx.wait(waitConfirmations);
       console.log(`Automation.fundSubscriptionNative OK: ${fundWei} wei`);
     } catch (e: any) {
-      console.log(`Automation.fundSubscriptionNative skipped/failed: ${e?.message ?? String(e)}`);
+      console.log(
+        `Automation.fundSubscriptionNative skipped/failed: ${e?.message ?? String(e)}`
+      );
     }
   }
 
   // ============================================================
-  // 7) Verify (Sepolia only)
+  // 8) Verify (Sepolia only)
   // ============================================================
   console.log("----------------------------------------------------");
   console.log("Etherscan verification (with retries)...");
 
   await verifyWithRetries(addressMarketplace, []);
   await verifyWithRetries(addressRaffleImpl, []);
+  await verifyWithRetries(addressNftImpl, []); // ✅ NEW
   await verifyWithRetries(addressVerifier, verifierArgs);
   await verifyWithRetries(addressAutomation, automationArgs as any);
 

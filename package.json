@@ -72,6 +72,7 @@
     "gsn:relayer-register": "npx gsn relayer-register --network \"https://sepolia.infura.io/v3/c53f023f8f7848b48a452cfaaa1d3718\" --mnemonic \"./mnemonic.txt\" --derivationIndex 0 --from \"0x15e30a95a101f0Cc604e99627b9308C8C7992B4F\" --relayUrl \"http://127.0.0.1:8090\" --token \"0x2152AC78EAdB31d3E74B99a5584D9E17F4dea873\" --stake 1 --unstakeDelay 15000 --funds 0.05 --gasPrice 20",
     "gsn:relayer-register-rmt": "npx gsn relayer-register --network \"https://sepolia.infura.io/v3/c53f023f8f7848b48a452cfaaa1d3718\" --mnemonic \"./mnemonic.txt\" --derivationIndex 0 --from \"0x15e30a95a101f0Cc604e99627b9308C8C7992B4F\" --relayUrl \"http://127.0.0.1:8090\" --token \"0xEE0c7864Fb8C9ecb84BDe410c57BDD0362d70dd7\" --stake 1 --unstakeDelay 15000 --funds 0 --gasPrice 20",
     "deploy:marketplace:sepolia": "npx hardhat run ./deploy/04-deploy_marketplace_infra.ts --network sepolia",
+    "create-raffle:sepolia": "npx hardhat run scripts/createRaffle.ts --network sepolia",
     "hardhat-ethernal": "npm install --save-dev hardhat-ethernal",
     "test": "npx hardhat test ./test/staging/Lottery.staging.test.js --network hardhat"
   }
