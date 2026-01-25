@@ -421,7 +421,7 @@ contract RaffleContract {
             prizes.push(
                 RaffleLibrary.RafflePrize(
                     _prizes[i].prizeTitle,
-                    _prizes[i].country,
+                    _prizes[i].country2,
                     _prizes[i].prizeAmount
                 )
             );
