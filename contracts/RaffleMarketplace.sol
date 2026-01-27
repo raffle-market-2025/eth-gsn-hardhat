@@ -73,7 +73,17 @@ contract RaffleMarketplace is IRaffleMarketplace {
     event AutomationSet(address indexed automation);
     event RaffleNftImplementationSet(address indexed nftImplementation);
 
-    event RaffleCreated(uint256 indexed raffleId, address indexed raffleAddress, address indexed raffleOwner);
+    event RaffleCreated(
+        uint256 indexed raffleId,
+        address indexed raffleAddress,
+        address indexed raffleOwner,
+        // new attributes added onto emit event
+        RaffleLibrary.Raffle raffle,
+        RaffleLibrary.RaffleStage[] stages,
+        RaffleLibrary.RafflePrize[] prizes,
+        RaffleLibrary.StageType ongoingStage
+    );
+
     event RaffleNftCloned(uint256 indexed raffleId, address indexed raffleNFT);
 
     // Mirrors updates coming from RaffleContract
@@ -168,8 +178,23 @@ contract RaffleMarketplace is IRaffleMarketplace {
             raffleTicker = raffleId + 1;
         }
 
+        // ongoing stage (0-й stage) нужен и для рекорда, и для event
+        RaffleLibrary.StageType ongoingStage =
+            stages_.length != 0 ? stages_[0].stageType : RaffleLibrary.StageType(0);
+
         raffleAddr = _deployViaVerifier(raffleId, durationSeconds, thresholdPercent, prizes_, stages_);
-        emit RaffleCreated(raffleId, raffleAddr, msg.sender);
+
+        // ✅ NEW: расширенный event
+        _emitRaffleCreatedFull(
+            raffleId,
+            raffleAddr,
+            msg.sender,
+            durationSeconds,
+            thresholdPercent,
+            stages_,
+            prizes_,
+            ongoingStage
+        );
 
         address nft = _cloneInitAndWireNft(raffleAddr, nftBaseURI);
         emit RaffleNftCloned(raffleId, nft);
@@ -177,7 +202,7 @@ contract RaffleMarketplace is IRaffleMarketplace {
         // Strict wiring (если хотите best-effort — обернём в try/catch)
         IRaffleAutomationConfig(raffleAddr).setAutomation(automation);
 
-        _storeRecord(raffleId, raffleAddr, nft, stages_);
+        _storeRecord(raffleId, raffleAddr, nft, ongoingStage);
     }
 
     function _requireInfra() internal view {
@@ -222,7 +247,7 @@ contract RaffleMarketplace is IRaffleMarketplace {
         uint256 raffleId_,
         address raffleAddr_,
         address nft_,
-        RaffleLibrary.RaffleStage[] calldata stages_
+        RaffleLibrary.StageType ongoingStage_
     ) internal {
         RaffleRecord storage r = raffles[raffleId_];
 
@@ -230,8 +255,54 @@ contract RaffleMarketplace is IRaffleMarketplace {
         r.raffleOwner = payable(msg.sender);
         r.raffleNFT = nft_;
         r.state = RaffleLibrary.RaffleState.OPEN;
-        r.currentStage = stages_.length != 0 ? stages_[0].stageType : RaffleLibrary.StageType(0);
+        r.currentStage = ongoingStage_;
         r.createdAt = block.timestamp;
+    }
+
+    // ============================================================
+    // NEW: emit full event with struct + arrays
+    // ============================================================
+    function _emitRaffleCreatedFull(
+        uint256 raffleId_,
+        address raffleAddr_,
+        address raffleOwner_,
+        uint256 durationSeconds_,
+        uint256 thresholdPercent_,
+        RaffleLibrary.RaffleStage[] calldata stages_,
+        RaffleLibrary.RafflePrize[] calldata prizes_,
+        RaffleLibrary.StageType ongoingStage_
+    ) internal {
+        string[] memory imagesMem;
+        address payable[] memory winnersMem;
+
+        RaffleLibrary.CharityInformation memory charityMem;
+        charityMem.charityName = "";
+        charityMem.charityAddress = payable(address(0));
+        charityMem.percentToDonate = 0;
+
+        RaffleLibrary.Raffle memory raffleMem;
+        raffleMem.id = raffleId_;
+        raffleMem.isVerifiedByMarketplace = true;
+        raffleMem.raffleAddress = raffleAddr_;
+        raffleMem.category = RaffleLibrary.RaffleCategory(0); // default
+        raffleMem.title = "";
+        raffleMem.description = "";
+        raffleMem.raffleDuration = durationSeconds_;
+        raffleMem.threshold = thresholdPercent_;
+        raffleMem.images = imagesMem;
+        raffleMem.winners = winnersMem;
+        raffleMem.raffleState = RaffleLibrary.RaffleState.OPEN;
+        raffleMem.charityInfo = charityMem;
+
+        emit RaffleCreated(
+            raffleId_,
+            raffleAddr_,
+            raffleOwner_,
+            raffleMem,
+            stages_,
+            prizes_,
+            ongoingStage_
+        );
     }
 
     /* =========================
