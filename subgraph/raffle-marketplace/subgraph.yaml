@@ -8,9 +8,9 @@ dataSources:
     name: RaffleMarketplace
     network: sepolia
     source:
-      address: "0xA0A9Cec536B98bbd526ADd7938D9D707Cc83E3e5"
+      address: "0x223768B68F5121C99395120D3a8Ff6d6c49664CE"
       abi: RaffleMarketplace
-      startBlock: 9987354
+      startBlock: 10135127
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -31,7 +31,7 @@ dataSources:
       eventHandlers:
         - event: AutomationSet(indexed address)
           handler: handleAutomationSet
-        - event: RaffleCreated(indexed uint256,indexed address,indexed address)
+        - event: RaffleCreated(indexed uint256,indexed address,indexed address,(uint256,bool,address,uint8,string,string,uint256,uint256,string[],address[],uint8,(string,address,uint256)),(uint8,uint256,uint256,uint256)[],(string,bytes2,uint256)[],uint8)
           handler: handleRaffleCreated
         - event: RaffleNftCloned(indexed uint256,indexed address)
           handler: handleRaffleNftCloned

@@ -30,7 +30,11 @@ export function createAutomationSetEvent(automation: Address): AutomationSet {
 export function createRaffleCreatedEvent(
   raffleId: BigInt,
   raffleAddress: Address,
-  raffleOwner: Address
+  raffleOwner: Address,
+  raffle: ethereum.Tuple,
+  stages: Array<ethereum.Tuple>,
+  prizes: Array<ethereum.Tuple>,
+  ongoingStage: i32
 ): RaffleCreated {
   let raffleCreatedEvent = changetype<RaffleCreated>(newMockEvent())
 
@@ -52,6 +56,21 @@ export function createRaffleCreatedEvent(
     new ethereum.EventParam(
       "raffleOwner",
       ethereum.Value.fromAddress(raffleOwner)
+    )
+  )
+  raffleCreatedEvent.parameters.push(
+    new ethereum.EventParam("raffle", ethereum.Value.fromTuple(raffle))
+  )
+  raffleCreatedEvent.parameters.push(
+    new ethereum.EventParam("stages", ethereum.Value.fromTupleArray(stages))
+  )
+  raffleCreatedEvent.parameters.push(
+    new ethereum.EventParam("prizes", ethereum.Value.fromTupleArray(prizes))
+  )
+  raffleCreatedEvent.parameters.push(
+    new ethereum.EventParam(
+      "ongoingStage",
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(ongoingStage))
     )
   )
 

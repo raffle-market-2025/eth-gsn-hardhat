@@ -1,8 +1,8 @@
 {
   "sepolia": {
     "RaffleMarketplace": {
-      "address": "0xA0A9Cec536B98bbd526ADd7938D9D707Cc83E3e5",
-      "startBlock": 9987354
+      "address": "0x223768B68F5121C99395120D3a8Ff6d6c49664CE",
+      "startBlock": 10135127
     }
   }
 }
