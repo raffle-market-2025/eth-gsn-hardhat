@@ -41,24 +41,22 @@ export function handleRaffleCreated(event: RaffleCreatedEvent): void {
   )
   entity.raffleId = event.params.raffleId
   entity.raffleAddress = event.params.raffleAddress
-  entity.raffleOwner = event.params.raffleOwner
-  entity.raffle_id = event.params.raffle.id
-  entity.raffle_isVerifiedByMarketplace =
+  entity.hoster = event.params.raffleOwner
+  entity.isVerifiedByMarketplace =
     event.params.raffle.isVerifiedByMarketplace
-  entity.raffle_raffleAddress = event.params.raffle.raffleAddress
-  entity.raffle_category = event.params.raffle.category
-  entity.raffle_title = event.params.raffle.title
-  entity.raffle_description = event.params.raffle.description
-  entity.raffle_raffleDuration = event.params.raffle.raffleDuration
-  entity.raffle_threshold = event.params.raffle.threshold
-  entity.raffle_images = event.params.raffle.images
-  entity.raffle_winners = changetype<Bytes[]>(event.params.raffle.winners)
-  entity.raffle_raffleState = event.params.raffle.raffleState
-  entity.raffle_charityInfo_charityName =
+  entity.category = event.params.raffle.category
+  entity.title = event.params.raffle.title
+  entity.description = event.params.raffle.description
+  entity.raffleDuration = event.params.raffle.raffleDuration
+  entity.threshold = event.params.raffle.threshold
+  entity.images = event.params.raffle.images
+  entity.winners = changetype<Bytes[]>(event.params.raffle.winners)
+  entity.raffleState = event.params.raffle.raffleState
+  entity.charityInfo_charityName =
     event.params.raffle.charityInfo.charityName
-  entity.raffle_charityInfo_charityAddress =
+  entity.charityInfo_charityAddress =
     event.params.raffle.charityInfo.charityAddress
-  entity.raffle_charityInfo_percentToDonate =
+  entity.charityInfo_percentToDonate =
     event.params.raffle.charityInfo.percentToDonate
   entity.stages = changetype<Bytes[]>(event.params.stages)
   entity.prizes = changetype<Bytes[]>(event.params.prizes)

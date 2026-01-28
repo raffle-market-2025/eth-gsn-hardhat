@@ -10,21 +10,19 @@ type RaffleCreated @entity(immutable: true) {
   id: Bytes!
   raffleId: BigInt! # uint256
   raffleAddress: Bytes! # address
-  raffleOwner: Bytes! # address
-  raffle_id: BigInt! # uint256
-  raffle_isVerifiedByMarketplace: Boolean! # bool
-  raffle_raffleAddress: Bytes! # address
-  raffle_category: Int! # uint8
-  raffle_title: String! # string
-  raffle_description: String! # string
-  raffle_raffleDuration: BigInt! # uint256
-  raffle_threshold: BigInt! # uint256
-  raffle_images: [String!]! # string[]
-  raffle_winners: [Bytes!]! # address[]
-  raffle_raffleState: Int! # uint8
-  raffle_charityInfo_charityName: String! # string
-  raffle_charityInfo_charityAddress: Bytes! # address
-  raffle_charityInfo_percentToDonate: BigInt! # uint256
+  hoster: Bytes! # address
+  isVerifiedByMarketplace: Boolean! # bool
+  category: Int! # uint8
+  title: String! # string
+  description: String! # string
+  raffleDuration: BigInt! # uint256
+  threshold: BigInt! # uint256
+  images: [String!]! # string[]
+  winners: [Bytes!]! # address[]
+  raffleState: Int! # uint8
+  charityInfo_charityName: String! # string
+  charityInfo_charityAddress: Bytes! # address
+  charityInfo_percentToDonate: BigInt! # uint256
   stages: [Bytes!]! # tuple[]
   prizes: [Bytes!]! # tuple[]
   ongoingStage: Int! # uint8
