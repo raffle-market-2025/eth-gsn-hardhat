@@ -18,9 +18,9 @@ contract PaymasterWhitelist is BasePaymaster {
     event SelectorSet(bytes4 indexed selector, bool allowed);
 
     // ---- Common selectors (for convenience / clarity) ----
-    // PromoRaffle.enterRaffle(string,bytes3)
+    // PromoRaffle.enterRaffle(bytes32,bytes2,uint256,bytes)
     bytes4 public constant ENTER_RAFFLE =
-        bytes4(keccak256("enterRaffle(string,bytes3)"));
+        bytes4(keccak256("enterRaffle(bytes32,bytes2,uint256,bytes)"));
 
     // RMT.buyTokens()
     bytes4 public constant BUY_TOKENS =
@@ -69,6 +69,7 @@ contract PaymasterWhitelist is BasePaymaster {
         override
         returns (bytes memory context, bool rejectOnRecipientRevert)
     {
+        _verifyForwarder(relayRequest);
         address _target = target;
         if (_target == address(0)) revert TargetNotSet();
         if (relayRequest.request.to != _target) revert WrongTarget();
@@ -85,7 +86,7 @@ contract PaymasterWhitelist is BasePaymaster {
         if (!allowed[sel]) revert MethodNotAllowed();
 
         // context can be empty; you can also encode sender if you need it in postRelayedCall
-        return ("", false);
+        return ("", true);
     }
 
     function _postRelayedCall(

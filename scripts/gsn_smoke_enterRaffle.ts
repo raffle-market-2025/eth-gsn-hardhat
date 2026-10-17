@@ -24,12 +24,10 @@ function readAddr(rel: string): string {
   return a;
 }
 
-function bytes3FromAscii(code: string): string {
+function bytes2FromAscii(code: string): string {
   const b = Buffer.from(code, "utf8");
-  if (b.length > 3) throw new Error(`COUNTRY3 must be <= 3 ASCII bytes (e.g. UKR). Got "${code}"`);
-  const out = Buffer.alloc(3);
-  b.copy(out);
-  return "0x" + out.toString("hex"); // always 3 bytes
+  if (b.length !== 2) throw new Error("COUNTRY2 must contain exactly two ASCII bytes");
+  return "0x" + b.toString("hex");
 }
 
 // IP -> bytes32 hash (Solidity-style: keccak256(bytes(ipString)))
@@ -150,8 +148,7 @@ async function main() {
     gsnProvider.addAccount(pk);
     from = new Wallet(pk).address;
   } else {
-    const acc = gsnProvider.newAccount();
-    from = String(acc.address);
+    throw new Error("Set SIGNER_PRIVATE_KEY for the participant address authorized by the admission service");
   }
 
   const external = makeEthersV5ExternalProvider(gsnProvider, [from]);
@@ -169,13 +166,10 @@ async function main() {
     from,
   });
 
-  // UPDATED ABI: enterRaffle(bytes32 ipHash, bytes3 country3)
-  // UPDATED event: RaffleEnter(address,string/bytes32,...)
-  // Здесь используем bytes32 _ipHash, чтобы parseLog совпал с новым контрактом.
   const promoAbi = [
-    "function enterRaffle(bytes32 _ipHash, bytes3 _country3) external",
+    "function enterRaffle(bytes32 ipHash, bytes2 country2, uint256 deadline, bytes signature) external",
     "function isTrustedForwarder(address forwarder) view returns (bool)",
-    "event RaffleEnter(address indexed _player, bytes32 _ipHash, bytes3 _country3, uint256 _lastTimestamp)",
+    "event RaffleEnter(address indexed _player, bytes32 _ipHash, bytes2 _country2, uint256 _lastTimestamp, uint256 cycle)",
   ];
 
   // Sanity: recipient trusts forwarder
@@ -193,20 +187,13 @@ async function main() {
   const signer = provider.getSigner(from);
   const promo = new Contract(PROMO_RAFFLE, promoAbi, signer);
 
-  const ip = process.env.IP ?? "127.0.0.1";
-  const country3 = process.env.COUNTRY3 ?? "UKR";
-  const countryBytes3 = bytes3FromAscii(country3);
-
-  const ipHash = ipHashFromString(ip);
-
-  console.log("Sending enterRaffle via GSN...", {
-    ip,
-    ipHash,
-    country3,
-    countryBytes3,
-  });
-
-  const tx = await promo.enterRaffle(ipHash, countryBytes3);
+  // Obtain these fields from the admission service for this exact `from` address.
+  const ipHash = process.env.IP_HASH;
+  const signature = process.env.PROMO_ENTRY_SIGNATURE;
+  const deadline = process.env.PROMO_ENTRY_DEADLINE;
+  if (!ipHash || !signature || !deadline) throw new Error("Set IP_HASH, PROMO_ENTRY_SIGNATURE and PROMO_ENTRY_DEADLINE from the admission service");
+  const country = bytes2FromAscii(process.env.COUNTRY2 ?? "UA");
+  const tx = await promo.enterRaffle(ipHash, country, deadline, signature);
   console.log("tx hash:", tx.hash);
 
   const receipt = await tx.wait();

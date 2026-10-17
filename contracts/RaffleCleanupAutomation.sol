@@ -109,14 +109,14 @@ contract RaffleCleanupAutomation is AutomationCompatibleInterface, RaffleRegiste
      * checkUpkeep finds up to MAX_BATCH raffles that need cleanup.
      * performData = abi.encode(raffleIds, nextCursor)
      */
-    function checkUpkeep(bytes calldata)
-        external
-        view
-        override
-        returns (bool upkeepNeeded, bytes memory performData)
-    {
+    function checkUpkeep(bytes calldata) external view override returns (bool, bytes memory) {
+        (uint256[] memory batch, uint256 cursor, bool advance) = _scan();
+        return (batch.length > 0 || advance, abi.encode(batch, cursor));
+    }
+
+    function _scan() internal view returns (uint256[] memory batch, uint256 nextCursor, bool advance) {
         uint256 next = marketplace.getNextTickerId();
-        if (next <= 1) return (false, bytes("")); // no raffles
+        if (next <= 1) return (new uint256[](0), 1, false); // no raffles
         uint256 last = next - 1;
 
         uint256 cursor = scanCursor;
@@ -156,28 +156,23 @@ contract RaffleCleanupAutomation is AutomationCompatibleInterface, RaffleRegiste
             id = (id == last) ? 1 : (id + 1);
         }
 
-        if (found == 0) return (false, bytes(""));
-
-        uint256[] memory batch = new uint256[](found);
+        batch = new uint256[](found);
         for (uint256 i = 0; i < found; i++) batch[i] = tmp[i];
 
-        uint256 nextCursor = id;
-
-        upkeepNeeded = true;
-        performData = abi.encode(batch, nextCursor);
+        return (batch, id, scanLimit < last);
     }
 
-    function performUpkeep(bytes calldata performData) external override {
-        (uint256[] memory batch, uint256 nextCursor) = abi.decode(performData, (uint256[], uint256));
-
-        uint256 next = marketplace.getNextTickerId();
-        if (next <= 1) revert Cleanup__UpkeepNotNeeded();
-        uint256 last = next - 1;
+    // performData is advisory; rescan current state to enforce MAX_SCAN/MAX_BATCH and cursor integrity.
+    function performUpkeep(bytes calldata) external override {
+        (uint256[] memory batch, uint256 nextCursor, bool advance) = _scan();
+        if (batch.length == 0 && !advance) revert Cleanup__UpkeepNotNeeded();
+        uint256 last = marketplace.getNextTickerId() - 1;
 
         // update cursor
         if (nextCursor < 1 || nextCursor > last) scanCursor = 1;
         else scanCursor = nextCursor;
         emit CursorUpdated(scanCursor);
+        if (batch.length == 0) return;
 
         bool didWork = false;
 

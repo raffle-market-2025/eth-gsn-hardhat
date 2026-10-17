@@ -21,3 +21,9 @@
 
 /build
 /gsndata
+# Local credentials
+.env
+.env.*
+!.env.example
+mnemonic.txt
+config/gsn-relay-config.json

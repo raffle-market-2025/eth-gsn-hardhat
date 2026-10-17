@@ -1,0 +1,9 @@
+{
+  "ethereumNodeUrl": "https://YOUR_SEPOLIA_RPC_URL",
+  "relayHubAddress": "0xYOUR_RELAY_HUB_ADDRESS",
+  "managerStakeTokenAddress": "0xYOUR_STAKE_TOKEN_ADDRESS",
+  "ownerAddress": "0xYOUR_NEW_RELAY_OWNER_ADDRESS",
+  "gasPriceFactor": 1,
+  "url": "http://127.0.0.1:8090",
+  "workdir": "/app/data"
+}
