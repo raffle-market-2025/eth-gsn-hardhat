@@ -8,6 +8,7 @@ import "./IRaffleMarketplace.sol";
 interface IRaffleNFT {
     function mintNFTs(address to) external returns (bool transferred, uint256 mintedTokenId);
     function burnBatch(uint256[] calldata tokenIds) external;
+    function burnToken(uint256 tokenId) external;
     function ownerOf(uint256 tokenId) external view returns (address);
 }
 
@@ -74,6 +75,9 @@ contract RaffleContract {
     bytes32 private s_seed;
 
     bool private s_initialized;
+    mapping(uint256 => uint256) public ticketRefund;
+    mapping(uint256 => bool) public refundClaimed;
+    event RefundClaimed(address indexed recipient, uint256 indexed tokenId, uint256 amount);
 
     event RaffleEntered(address indexed player);
     event WinnersPicked(address payable[] winners);
@@ -102,6 +106,8 @@ contract RaffleContract {
             revert Raffle__ZeroAddress();
         }
 
+        require(_threshold <= 100 && _durationOfRaffle > 0, "Invalid raffle parameters");
+        require(_prizes.length > 0 && _prizes.length <= 32, "Invalid prizes count");
         raffleId = _raffleId;
         durationOfRaffle = block.timestamp + _durationOfRaffle;
         threshold = _threshold;
@@ -170,6 +176,7 @@ contract RaffleContract {
             (bool transferred, uint256 mintedTokenId) = IRaffleNFT(nft).mintNFTs(msg.sender);
             if (!transferred) revert Raffle__NotEnougEthEntered();
             tokensInRaffle.push(RaffleLibrary.Players(curStage.ticketPrice, mintedTokenId));
+            ticketRefund[mintedTokenId] = curStage.ticketPrice;
             unchecked { ++i; }
         }
 
@@ -220,7 +227,7 @@ contract RaffleContract {
         bool isOpen = (s_raffleState == RaffleLibrary.RaffleState.OPEN);
         bool isTimeFinished = (block.timestamp > durationOfRaffle);
         bool hasThreshold = isThresholdPassed();
-        bool hasTickets = (tokensInRaffle.length > 0);
+        bool hasTickets = (tokensInRaffle.length >= noOfWinnersToPick && noOfWinnersToPick > 0);
         return (isOpen && isTimeFinished && hasTickets && hasThreshold);
     }
 
@@ -307,8 +314,7 @@ contract RaffleContract {
 
     function cleanupBurn(uint256 maxCount) external {
         if (
-            s_raffleState != RaffleLibrary.RaffleState.FINISHED &&
-            s_raffleState != RaffleLibrary.RaffleState.REVERTED
+            s_raffleState != RaffleLibrary.RaffleState.FINISHED
         ) revert Raffle__NotFinalized();
 
         address nft = raffleNFT;
@@ -342,6 +348,7 @@ contract RaffleContract {
     }
 
     function cleanupRemaining() external view returns (uint256) {
+        if (s_raffleState == RaffleLibrary.RaffleState.REVERTED) return 0;
         uint256 m = tokensInRaffle.length;
         if (s_cleanupCursor >= m) return 0;
         return m - s_cleanupCursor;
@@ -351,21 +358,30 @@ contract RaffleContract {
     // Refund / prizes
     // ---------------------------------------------------------------------
 
-    function revertLottery() external onlyHoster onlyMarketplaceOwner {
+    /// @notice Hosts/admins may cancel OPEN raffles. Anyone may cancel a failed expired raffle.
+    function revertLottery() external {
         if (s_raffleState != RaffleLibrary.RaffleState.OPEN) revert Raffle__NotOpen();
-
-        address nft = raffleNFT;
-        if (nft == address(0)) revert Raffle__NftNotSet();
-
-        for (uint256 i = 0; i < tokensInRaffle.length; ) {
-            uint256 tokenId = tokensInRaffle[i].id;
-            address payable ownerOfTicket = payable(IRaffleNFT(nft).ownerOf(tokenId));
-            ownerOfTicket.transfer(tokensInRaffle[i].ticketPrice);
-            unchecked { ++i; }
+        bool failed = block.timestamp > durationOfRaffle &&
+            (!isThresholdPassed() || tokensInRaffle.length < noOfWinnersToPick);
+        if (!failed && msg.sender != raffleOwner && msg.sender != marketplaceOwner) {
+            revert Raffle__OnlyAuthorizedCaller();
         }
-
         s_raffleState = RaffleLibrary.RaffleState.REVERTED;
         raffleMarketplace.updateRaffleState(raffleId, s_raffleState);
+    }
+
+    /// @notice Ticket owners redeem separately; a rejecting recipient cannot block other refunds.
+    function claimRefund(uint256 tokenId) external {
+        if (s_raffleState != RaffleLibrary.RaffleState.REVERTED) revert Raffle__NotFinalized();
+        require(!refundClaimed[tokenId], "Refund already claimed");
+        require(IRaffleNFT(raffleNFT).ownerOf(tokenId) == msg.sender, "Not ticket owner");
+        uint256 amount = ticketRefund[tokenId];
+        require(amount != 0, "Unknown ticket");
+        refundClaimed[tokenId] = true;
+        IRaffleNFT(raffleNFT).burnToken(tokenId);
+        (bool sent, ) = payable(msg.sender).call{value: amount}("");
+        require(sent, "Refund transfer failed");
+        emit RefundClaimed(msg.sender, tokenId, amount);
     }
 
     function distributePrizes() public onlyMarketplaceOwner {
@@ -384,6 +400,7 @@ contract RaffleContract {
     }
 
     function _sendFundsToMarketplace() external onlyMarketplaceOwner {
+        if (s_raffleState != RaffleLibrary.RaffleState.FINISHED) revert Raffle__NotFinalized();
         (bool sent, ) = address(raffleMarketplace).call{value: address(this).balance}("");
         if (!sent) revert Raffle__NotEnougEthEntered();
     }
@@ -395,6 +412,8 @@ contract RaffleContract {
     function _addStageInStorage(RaffleLibrary.RaffleStage[] calldata _stages) internal {
         if (_stages.length == 0) revert Raffle__NotEnougEthEntered();
         for (uint256 i = 0; i < _stages.length; ) {
+            require(_stages[i].ticketPrice > 0 && _stages[i].ticketsAvailable > 0, "Invalid stage");
+            if (i > 0) require(uint256(_stages[i].stageType) > uint256(_stages[i - 1].stageType), "Unsorted stages");
             raffleStages[uint256(_stages[i].stageType)] = RaffleLibrary.RaffleStage(
                 _stages[i].stageType,
                 _stages[i].ticketsAvailable,

@@ -103,6 +103,13 @@ contract RaffleAutomationVRF is
 
     // requestId -> raffleIds batch
     mapping(uint256 => uint256[]) private requestIdToBatch;
+    mapping(uint256 => uint256) public requestRandomWord;
+    mapping(uint256 => bool) public requestFulfilled;
+    mapping(uint256 => mapping(uint256 => address)) public requestRaffle;
+    mapping(uint256 => mapping(uint256 => bool)) public raffleFinalized;
+    uint256 public pendingRaffles;
+    mapping(uint256 => uint256) public raffleRequest;
+    event RandomnessReceived(uint256 indexed requestId);
 
     /* ========= Events ========= */
 
@@ -161,6 +168,7 @@ contract RaffleAutomationVRF is
 
     function setMarketplace(address newMarketplace) external onlyOwner {
         if (newMarketplace == address(0)) revert AutomVRF__BadConfig();
+        require(pendingRaffles == 0, "Pending raffles");
         marketplace = IRaffleMarketplaceView(newMarketplace);
         emit MarketplaceUpdated(newMarketplace);
     }
@@ -174,6 +182,8 @@ contract RaffleAutomationVRF is
         if (_vrfCoordinator == address(0)) revert AutomVRF__BadConfig();
         if (_subscriptionId == 0) revert AutomVRF__BadConfig();
 
+        require(pendingRaffles == 0, "Pending raffles");
+        s_vrfCoordinator = IVRFCoordinatorV2Plus(_vrfCoordinator);
         coordinator = IVRFCoordinatorV2Plus(_vrfCoordinator);
         subscriptionId = _subscriptionId;
         keyHash = _keyHash;
@@ -189,11 +199,6 @@ contract RaffleAutomationVRF is
     function setScanCursor(uint256 newCursor) external onlyOwner {
         scanCursor = newCursor;
         emit CursorUpdated(newCursor);
-    }
-
-    // Rescue: clear a stuck inFlight flag (if something went wrong operationally)
-    function clearInFlight(uint256 raffleId) external onlyOwner {
-        inFlight[raffleId] = false;
     }
 
     /* ========= VRF subscription views ========= */
@@ -235,14 +240,14 @@ contract RaffleAutomationVRF is
      * One upkeep for all raffles: checkData ignored.
      * Returns performData = abi.encode(batchIds, nextCursor)
      */
-    function checkUpkeep(bytes calldata)
-        external
-        view
-        override
-        returns (bool upkeepNeeded, bytes memory performData)
-    {
+    function checkUpkeep(bytes calldata) external view override returns (bool, bytes memory) {
+        (uint256[] memory batch, uint256 cursor, bool advance) = _scan();
+        return (batch.length > 0 || advance, abi.encode(batch, cursor));
+    }
+
+    function _scan() internal view returns (uint256[] memory batch, uint256 nextCursor, bool advance) {
         uint256 next = marketplace.getNextTickerId();
-        if (next <= 1) return (false, bytes(""));
+        if (next <= 1) return (new uint256[](0), 1, false);
         uint256 last = next - 1;
 
         uint256 cursor = scanCursor;
@@ -260,38 +265,36 @@ contract RaffleAutomationVRF is
         while (scanned < scanLimit && found < uint256(MAX_BATCH)) {
             address raffleAddr = marketplace.getRaffleAddress(id);
 
-            if (raffleAddr != address(0) && !inFlight[id]) {
-                if (IRaffleFinalize(raffleAddr).isReadyToDraw()) {
-                    tmp[found] = id;
-                    found++;
-                }
+            if (inFlight[id] && requestFulfilled[raffleRequest[id]]) {
+                tmp[found++] = id;
+            } else if (raffleAddr != address(0) && !inFlight[id]) {
+                try IRaffleFinalize(raffleAddr).isReadyToDraw() returns (bool ready) {
+                    if (ready) tmp[found++] = id;
+                } catch {}
             }
 
             scanned++;
             id = (id == last) ? 1 : (id + 1);
         }
 
-        if (found == 0) return (false, bytes(""));
-
-        uint256[] memory batch = new uint256[](found);
+        batch = new uint256[](found);
         for (uint256 i = 0; i < found; i++) batch[i] = tmp[i];
 
-        upkeepNeeded = true;
-        performData = abi.encode(batch, id);
+        return (batch, id, scanLimit < last);
     }
 
-    function performUpkeep(bytes calldata performData) external override {
-        (uint256[] memory batch, uint256 nextCursor) = abi.decode(performData, (uint256[], uint256));
-
-        uint256 next = marketplace.getNextTickerId();
-        if (next <= 1) revert AutomVRF__NoRaffles();
-        uint256 last = next - 1;
+    // performData is advisory; rescan current state to enforce MAX_SCAN/MAX_BATCH and cursor integrity.
+    function performUpkeep(bytes calldata) external override {
+        (uint256[] memory batch, uint256 nextCursor, bool advance) = _scan();
+        if (batch.length == 0 && !advance) revert AutomVRF__UpkeepNotNeeded();
+        uint256 last = marketplace.getNextTickerId() - 1;
 
         // update cursor
         if (nextCursor < 1 || nextCursor > last) scanCursor = 1;
         else scanCursor = nextCursor;
 
         emit CursorUpdated(scanCursor);
+        if (batch.length == 0) return;
 
         // lock raffles; skip ones that changed since checkUpkeep
         uint256[] memory locked = new uint256[](batch.length);
@@ -302,7 +305,15 @@ contract RaffleAutomationVRF is
             address raffleAddr = marketplace.getRaffleAddress(raffleId);
 
             if (raffleAddr == address(0)) continue;
-            if (inFlight[raffleId]) continue;
+            if (inFlight[raffleId]) {
+                uint256 pendingRequest = raffleRequest[raffleId];
+                if (requestFulfilled[pendingRequest]) {
+                    try this.finalizeRaffle(pendingRequest, raffleId) {} catch (bytes memory reason) {
+                        emit RaffleFinalizeFailed(pendingRequest, raffleId, reason);
+                    }
+                }
+                continue;
+            }
 
             // If startDraw reverts (not ready anymore / already calculating), skip.
             try IRaffleFinalize(raffleAddr).startDraw() {
@@ -314,10 +325,10 @@ contract RaffleAutomationVRF is
             }
         }
 
-        if (lockedCount == 0) revert AutomVRF__UpkeepNotNeeded();
+        if (lockedCount == 0) return;
 
         // Request ONE VRF word (nativePayment=true)
-        uint256 requestId = coordinator.requestRandomWords(
+        uint256 requestId = s_vrfCoordinator.requestRandomWords(
             VRFV2PlusClient.RandomWordsRequest({
                 keyHash: keyHash,
                 subId: subscriptionId,
@@ -332,7 +343,12 @@ contract RaffleAutomationVRF is
 
         // Persist batch under requestId
         uint256[] storage store = requestIdToBatch[requestId];
-        for (uint256 i = 0; i < lockedCount; i++) store.push(locked[i]);
+        for (uint256 i = 0; i < lockedCount; i++) {
+            store.push(locked[i]);
+            raffleRequest[locked[i]] = requestId;
+            requestRaffle[requestId][locked[i]] = marketplace.getRaffleAddress(locked[i]);
+        }
+        pendingRaffles += lockedCount;
 
         // shrink for event
         uint256[] memory out = new uint256[](lockedCount);
@@ -346,40 +362,27 @@ contract RaffleAutomationVRF is
 
     /* ========= VRF callback ========= */
 
+    /// @dev Keep the charged callback small: persist randomness before any fallible finalization.
     function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
-        uint256[] storage batch = requestIdToBatch[requestId];
-        uint256 n = batch.length;
+        if (requestIdToBatch[requestId].length == 0 || requestFulfilled[requestId] || randomWords.length != 1) return;
+        requestRandomWord[requestId] = randomWords[0];
+        requestFulfilled[requestId] = true;
+        emit RandomnessReceived(requestId);
+    }
 
-        if (n == 0) {
-            // safest: ignore unknown (do not revert VRF callback)
-            return;
-        }
-
-        uint256 base = randomWords[0];
-        uint256[] memory one;
-
-        for (uint256 i = 0; i < n; ) {
-            uint256 raffleId = batch[i];
-            address raffleAddr = marketplace.getRaffleAddress(raffleId);
-
-            // release lock regardless (avoid perma-stuck)
-            inFlight[raffleId] = false;
-
-            if (raffleAddr != address(0)) {
-                // per-raffle derived word (domain separation)
-                one[0] = uint256(keccak256(abi.encodePacked(base, requestId, raffleId, raffleAddr)));
-
-                try IRaffleFinalize(raffleAddr).finalizeFromRandomWords(one) {
-                    emit RaffleFinalized(requestId, raffleId);
-                } catch (bytes memory reason) {
-                    emit RaffleFinalizeFailed(requestId, raffleId, reason);
-                }
-            }
-
-            unchecked { ++i; }
-        }
-
-        delete requestIdToBatch[requestId];
+    /// @notice Anyone can retry with the original VRF word; failed attempts never request new randomness.
+    function finalizeRaffle(uint256 requestId, uint256 raffleId) external {
+        address raffleAddr = requestRaffle[requestId][raffleId];
+        require(requestFulfilled[requestId] && raffleAddr != address(0), "Randomness unavailable");
+        require(!raffleFinalized[requestId][raffleId], "Already finalized");
+        uint256[] memory one = new uint256[](1);
+        one[0] = uint256(keccak256(abi.encodePacked(requestRandomWord[requestId], requestId, raffleId, raffleAddr)));
+        // Revert preserves retryability, including when the raffle runs out of gas.
+        raffleFinalized[requestId][raffleId] = true;
+        IRaffleFinalize(raffleAddr).finalizeFromRandomWords(one);
+        inFlight[raffleId] = false;
+        pendingRaffles--;
+        emit RaffleFinalized(requestId, raffleId);
     }
 
     /* ========= Internal helpers ========= */

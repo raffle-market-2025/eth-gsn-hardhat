@@ -51,7 +51,7 @@ contract RaffleRegisterUpkeep {
         bytes memory checkData,
         uint96 amount,
         uint8 source
-    ) public {
+    ) internal {
         if (bytes(name).length == 0) revert Upkeep__EmptyName();
         if (upkeepContract == address(0)) revert Upkeep__ZeroUpkeepContract();
         if (adminAddress == address(0)) revert Upkeep__ZeroAdmin();
@@ -71,6 +71,6 @@ contract RaffleRegisterUpkeep {
             address(this)
         );
 
-        i_link.transferAndCall(registrar, amount, bytes.concat(REGISTER_SIG, payload));
+        require(i_link.transferAndCall(registrar, amount, bytes.concat(REGISTER_SIG, payload)), "LINK transfer failed");
     }
 }

@@ -38,10 +38,11 @@
     "forge-std": "github:foundry-rs/forge-std#v1.9.4",
     "hardhat": "^3.1.0",
     "hardhat-deploy": "^1.0.4",
-    "hardhat-ethernal": "^3.4.0",
     "mocha": "^11.7.5",
     "ts-node": "^10.9.2",
-    "typescript": "~5.8.0"
+    "typescript": "~5.8.0",
+    "solc": "0.8.28",
+    "ganache": "7.9.2"
   },
   "dependencies": {
     "@opengsn/contracts": "^3.0.0-beta.6",
@@ -51,7 +52,7 @@
   "scripts": {
     "node-start:local": "npx hardhat node",
     "gsn-start:local": "npx gsn start -n http://127.0.0.1:8545 --workdir build/gsn",
-    "gsn-deploy:sepolia": "npx gsn deploy -n 'https://sepolia.infura.io/v3/c53f023f8f7848b48a452cfaaa1d3718' --mnemonic ./mnemonic.txt --testToken --yes --burnAddress='0x15e30a95a101f0Cc604e99627b9308C8C7992B4F' --devAddress='0x15e30a95a101f0Cc604e99627b9308C8C7992B4F'",
+    "gsn-deploy:sepolia": "npx gsn deploy -n \"${SEPOLIA_RPC_URL:?Set SEPOLIA_RPC_URL}\" --mnemonic ./mnemonic.txt --testToken --yes --burnAddress='0x15e30a95a101f0Cc604e99627b9308C8C7992B4F' --devAddress='0x15e30a95a101f0Cc604e99627b9308C8C7992B4F'",
     "npx:compile": "npx hardhat compile && npx hardhat clean",
     "deploy:hardhat:promo": "npx hardhat run ./deploy/01-promoRaffle.ts --network hardhat",
     "deploy:sepolia:promo": "npx hardhat run ./deploy/01-promoRaffle.ts --network sepolia",
@@ -69,11 +70,14 @@
     "setup:allow-stake-token-rmt": "TOKEN=0xEE0c7864Fb8C9ecb84BDe410c57BDD0362d70dd7 AMOUNT=100 npx hardhat run scripts/gsn_allow_stake_token.ts --network sepolia",
     "test:check-allowed-token-rmt": "TOKEN=0xEE0c7864Fb8C9ecb84BDe410c57BDD0362d70dd7 npx hardhat run scripts/gsn_check_allowed_token.ts --network sepolia",
     "setup:rmt-buy-for-relayer": "npx hardhat run scripts/rmt_buy_for_relayer.ts --network sepolia",
-    "gsn:relayer-register": "npx gsn relayer-register --network \"https://sepolia.infura.io/v3/c53f023f8f7848b48a452cfaaa1d3718\" --mnemonic \"./mnemonic.txt\" --derivationIndex 0 --from \"0x15e30a95a101f0Cc604e99627b9308C8C7992B4F\" --relayUrl \"http://127.0.0.1:8090\" --token \"0x2152AC78EAdB31d3E74B99a5584D9E17F4dea873\" --stake 1 --unstakeDelay 15000 --funds 0.05 --gasPrice 20",
-    "gsn:relayer-register-rmt": "npx gsn relayer-register --network \"https://sepolia.infura.io/v3/c53f023f8f7848b48a452cfaaa1d3718\" --mnemonic \"./mnemonic.txt\" --derivationIndex 0 --from \"0x15e30a95a101f0Cc604e99627b9308C8C7992B4F\" --relayUrl \"http://127.0.0.1:8090\" --token \"0xEE0c7864Fb8C9ecb84BDe410c57BDD0362d70dd7\" --stake 1 --unstakeDelay 15000 --funds 0 --gasPrice 20",
+    "gsn:relayer-register": "npx gsn relayer-register --network \"${SEPOLIA_RPC_URL}\" --mnemonic \"./mnemonic.txt\" --derivationIndex 0 --from \"0x15e30a95a101f0Cc604e99627b9308C8C7992B4F\" --relayUrl \"http://127.0.0.1:8090\" --token \"0x2152AC78EAdB31d3E74B99a5584D9E17F4dea873\" --stake 1 --unstakeDelay 15000 --funds 0.05 --gasPrice 20",
+    "gsn:relayer-register-rmt": "npx gsn relayer-register --network \"${SEPOLIA_RPC_URL}\" --mnemonic \"./mnemonic.txt\" --derivationIndex 0 --from \"0x15e30a95a101f0Cc604e99627b9308C8C7992B4F\" --relayUrl \"http://127.0.0.1:8090\" --token \"0xEE0c7864Fb8C9ecb84BDe410c57BDD0362d70dd7\" --stake 1 --unstakeDelay 15000 --funds 0 --gasPrice 20",
     "deploy:marketplace:sepolia": "npx hardhat run ./deploy/04-deploy_marketplace_infra.ts --network sepolia",
     "create-raffle:sepolia": "npx hardhat run scripts/createRaffle.ts --network sepolia",
-    "hardhat-ethernal": "npm install --save-dev hardhat-ethernal",
-    "test": "npx hardhat test ./test/staging/Lottery.staging.test.js --network hardhat"
+    "test": "node --test test/security.test.cjs",
+    "compile": "hardhat compile"
+  },
+  "engines": {
+    "node": ">=22.10.0"
   }
 }

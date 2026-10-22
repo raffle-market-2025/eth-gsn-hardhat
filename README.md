@@ -1,57 +1,27 @@
-# Sample Hardhat 3 Beta Project (`mocha` and `ethers`)
+# Raffle marketplace and GSN
 
-This project showcases a Hardhat 3 Beta project using `mocha` for tests and the `ethers` library for Ethereum interactions.
+Solidity raffle marketplace, ticket NFTs, Chainlink VRF v2.5/Automation and
+OpenGSN sponsored promo admission.
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+Use Node >=22.10 and npm >=10. Install dependencies without executing install
+scripts, run local security regression tests, then compile Hardhat artifacts:
 
-## Project Overview
-
-This example project includes:
-
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using `mocha` and ethers.js
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
-
-## Usage
-
-### Running Tests
-
-To run all the tests in the project, execute the following command:
-
-```shell
-npx hardhat test
+```
+npm ci --ignore-scripts
+npm test
+npm run compile
 ```
 
-You can also selectively run the Solidity or `mocha` tests:
+The tests use an isolated EVM without RPC credentials or network forks. They
+compile all production contracts, verify deployment size and exercise the
+critical/high audit scenarios using full contract instances and local mocks.
 
-```shell
-npx hardhat test solidity
-npx hardhat test mocha
-```
+Read [SECURITY.md](SECURITY.md) before deployment. The remediation changes the promo
+constructor, admission API and refund flow. Existing deployments require a
+migration; leaked credentials require manual rotation. Use `.env.example` for
+variable names, export fresh credentials or configure Hardhat's keystore, and
+copy the relay config example to the ignored local config path.
 
-### Make a deployment to Sepolia
-
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
-
-To run the deployment to a local chain:
-
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
-```
-
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
-
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
-
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
-
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
-```
-
-After setting the variable, you can run the deployment with the Sepolia network:
-
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
-```
+Promo admission requires a server-issued EIP-712 signature. A funded VRF
+subscription and a keeper finalizing received randomness are also required.
+See [SECURITY.md](SECURITY.md) for the exact typed-data schema and lifecycle.

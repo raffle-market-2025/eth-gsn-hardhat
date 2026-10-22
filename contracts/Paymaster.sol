@@ -32,6 +32,10 @@ contract Paymaster is BasePaymaster {
         require(target != address(0), "Paymaster: target not set");
         require(relayRequest.request.to == target, "Paymaster: wrong target");
 
+        require(relayRequest.request.data.length >= 4, "Paymaster: missing selector");
+        require(bytes4(relayRequest.request.data[:4]) == bytes4(keccak256("enterRaffle(bytes32,bytes2,uint256,bytes)")), "Paymaster: method not allowed");
+        require(relayRequest.request.value == 0, "Paymaster: value not supported");
+
         // context можно использовать в postRelayedCall (логирование/учет)
         context = abi.encode(relayRequest.request.from);
 

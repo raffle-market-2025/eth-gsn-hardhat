@@ -11,6 +11,8 @@ contract RaffleNFT is ERC721 {
     error NonexistentToken();
 
     /* =========================  Storage (per-clone)  ========================= */
+    address private immutable implementation = address(this);
+    address private immutable initializer = msg.sender;
     address public raffleAddress;
     string private baseTokenURI;
     uint256 private nextTokenId;
@@ -24,6 +26,7 @@ contract RaffleNFT is ERC721 {
     /* =========================  Init (for clones)  ========================= */
     function initialize(address raffleAddress_, string calldata baseURI_) external {
         if (initialized) revert AlreadyInitialized();
+        if (address(this) == implementation && msg.sender != initializer) revert NotRaffle();
         initialized = true;
 
         if (raffleAddress_ == address(0)) revert RaffleZeroAddress();
